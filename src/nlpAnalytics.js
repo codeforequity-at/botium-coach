@@ -194,12 +194,12 @@ const _addSafe = (n1, n2) => {
     return null
   }
   if (_.isNil(n1)) {
-    return n2
+    return Number(n2)
   }
   if (_.isNil(n2)) {
-    return n1
+    return Number(n1)
   }
-  return n1 + n2
+  return Number(n1) + Number(n2)
 }
 
 const _calculateAggregatedStats = (context) => {
