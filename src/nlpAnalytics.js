@@ -587,11 +587,18 @@ const _processTestCaseResult = (entry, stepIndex, context) => {
               const name = actualEntity.name || ENTITY_WITHOUT_NAME
               const count = (nameToCount[name] || 0)
               nameToCount[name] = count
-              result.push(Object.assign({ entityKey: `${actualEntity.name} - ${count}` }, Object.assign(actualEntity, { name })))
+              result.push({
+                entityKey: `${actualEntity.name} - ${count}`,
+                name,
+                value: actualEntity.value,
+                confidence: actualEntity.confidence
+              })
             }
             return result
           }
           const actualEntities = createActualEntities()
+          console.log(`actualEntities ===> ${JSON.stringify(actualEntities)}`)
+          debug(`actualEntities ===> ${JSON.stringify(actualEntities)}`)
           const actualEntityKeys = actualEntities.map(e => e.entityKey)
           const actualEntityNames = actualEntities.map(entity => entity.name)
           const createExpectedEntityNameToKey = () => {
