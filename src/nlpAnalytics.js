@@ -597,8 +597,7 @@ const _processTestCaseResult = (entry, stepIndex, context) => {
             return result
           }
           const actualEntities = createActualEntities()
-          console.log(`actualEntities ===> ${JSON.stringify(actualEntities)}`)
-          debug(`actualEntities ===> ${JSON.stringify(actualEntities)}`)
+          // debug(`actualEntities ===> ${JSON.stringify(actualEntities)}`)
           const actualEntityKeys = actualEntities.map(e => e.entityKey)
           const actualEntityNames = actualEntities.map(entity => entity.name)
           const createExpectedEntityNameToKey = () => {
