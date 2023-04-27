@@ -2,7 +2,6 @@
 
 [![NPM](https://nodei.co/npm/botium-coach-worker.png?downloads=true&downloadRank=true&stars=true)](https://nodei.co/npm/botium-coach-worker/)
 
-[![Codeship Status for codeforequity-at/botium-coach-worker](https://app.codeship.com/projects/9c04d950-c431-0138-30ca-0ef8d48d2ada/status?branch=master)](https://app.codeship.com/projects/406406)
 [![npm version](https://badge.fury.io/js/botium-coach-worker.svg)](https://badge.fury.io/js/botium-coach-worker)
 [![license](https://img.shields.io/github/license/mashape/apistatus.svg)]()
 
