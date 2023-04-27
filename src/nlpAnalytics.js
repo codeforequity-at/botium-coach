@@ -757,14 +757,16 @@ const _processTestCaseResult = (entry, stepIndex, context) => {
 
           // perExpectedIntent
           if (expectedIntent) {
-            const perExpectedIntentField = perExpectedIntent[expectedIntent] ? perExpectedIntent[expectedIntent] : {
-              name: expectedIntent,
-              count: 0,
-              sum: 0,
-              confidenceDifferenceSquaredSum: 0,
-              avg: null,
-              deviation: null
-            }
+            const perExpectedIntentField = perExpectedIntent[expectedIntent]
+              ? perExpectedIntent[expectedIntent]
+              : {
+                  name: expectedIntent,
+                  count: 0,
+                  sum: 0,
+                  confidenceDifferenceSquaredSum: 0,
+                  avg: null,
+                  deviation: null
+                }
 
             perExpectedIntent[expectedIntent] = {
               name: expectedIntent,
@@ -777,14 +779,16 @@ const _processTestCaseResult = (entry, stepIndex, context) => {
           }
 
           // perCorrectedIntent
-          const perCorrectedIntentField = perCorrectedIntent[correctedIntent] ? perCorrectedIntent[correctedIntent] : {
-            name: correctedIntent,
-            count: 0,
-            sum: 0,
-            confidenceDifferenceSquaredSum: 0,
-            avg: null,
-            deviation: null
-          }
+          const perCorrectedIntentField = perCorrectedIntent[correctedIntent]
+            ? perCorrectedIntent[correctedIntent]
+            : {
+                name: correctedIntent,
+                count: 0,
+                sum: 0,
+                confidenceDifferenceSquaredSum: 0,
+                avg: null,
+                deviation: null
+              }
 
           perCorrectedIntentField.incomprehension = perCorrectedIntentField.incomprehension || correctedIncomprehensionIntent
 
@@ -799,14 +803,16 @@ const _processTestCaseResult = (entry, stepIndex, context) => {
           }
 
           // perActualIntent
-          const perActualIntentField = perActualIntent[actualIntent] ? perActualIntent[actualIntent] : {
-            name: actualIntent,
-            count: 0,
-            sum: null,
-            confidenceDifferenceSquaredSum: 0,
-            avg: null,
-            deviation: null
-          }
+          const perActualIntentField = perActualIntent[actualIntent]
+            ? perActualIntent[actualIntent]
+            : {
+                name: actualIntent,
+                count: 0,
+                sum: null,
+                confidenceDifferenceSquaredSum: 0,
+                avg: null,
+                deviation: null
+              }
           if (perActualIntentField.count && perActualIntentField.incomprehension !== actualIncomprehensionIntent) {
             const corrected = perActualIntentField.incomprehension || actualIncomprehensionIntent
             debug(`Ambigous incomprehension flag. Collected is ${perActualIntentField.incomprehension}, actual is ${actualIncomprehensionIntent}. Using ${corrected}`)
@@ -826,11 +832,15 @@ const _processTestCaseResult = (entry, stepIndex, context) => {
 
           utteranceListProcessor.process(actualIncomprehensionIntent, actualIncomprehensionIncompUtterance)
           // collecting and returning data
-          const scriptId = entry.testSetScript ? (entry.testSetScript.id || entry.testSetScript.name)
-            : (entry.testSetRepository ? entry.testSetRepository.id
-              : (entry.testSetFolder ? entry.testSetFolder.id
-                : (entry.testSetDownloadLink ? entry.testSetDownloadLink.id
-                  : (entry.testSetExcel ? entry.testSetExcel.id : null))))
+          const scriptId = entry.testSetScript
+            ? (entry.testSetScript.id || entry.testSetScript.name)
+            : (entry.testSetRepository
+                ? entry.testSetRepository.id
+                : (entry.testSetFolder
+                    ? entry.testSetFolder.id
+                    : (entry.testSetDownloadLink
+                        ? entry.testSetDownloadLink.id
+                        : (entry.testSetExcel ? entry.testSetExcel.id : null))))
           const newEntry = {
             id: step.step + ' - ' + scriptId,
             utterance,

@@ -7,7 +7,8 @@
     "build": "npm run eslint && npm test",
     "eslint": "eslint index.js \"./src/**/*.js\" \"./test/**/*.js\"",
     "eslint-fix": "eslint --fix index.js \"./src/**/*.js\" \"./test/**/*.js\"",
-    "test": "mocha \"./test/**/*.spec.js\""
+    "test": "mocha \"./test/**/*.spec.js\"",
+    "update-dependencies": "npm-check-updates --reject franc -u --timeout 120000"
   },
   "repository": {
     "type": "git",
@@ -20,20 +21,21 @@
   },
   "homepage": "https://www.botium.ai",
   "devDependencies": {
-    "eslint": "^7.5.0",
-    "eslint-config-standard": "^14.1.1",
-    "eslint-plugin-import": "^2.22.0",
-    "eslint-plugin-node": "^11.1.0",
-    "eslint-plugin-promise": "^4.2.1",
-    "eslint-plugin-standard": "^4.0.1",
-    "chai": "^4.2.0",
+    "eslint": "^8.39.0",
+    "eslint-config-standard": "^17.0.0",
+    "eslint-plugin-import": "^2.27.5",
+    "eslint-plugin-n": "^15.7.0",
+    "eslint-plugin-promise": "^6.1.1",
+    "eslint-plugin-standard": "^4.1.0",
+    "chai": "^4.3.7",
     "chai-as-promised": "^7.1.1",
-    "mocha": "^7.1.2"
+    "mocha": "^10.2.0",
+    "npm-check-updates": "^16.10.9"
   },
   "dependencies": {
-    "debug": "^4.1.1",
+    "debug": "^4.3.4",
     "franc": "^5.0.0",
-    "lodash": "^4.17.20",
-    "node-nlp": "^4.14.0"
+    "lodash": "^4.17.21",
+    "node-nlp": "^4.26.1"
   }
 }

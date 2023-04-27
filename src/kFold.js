@@ -1,6 +1,8 @@
 const { NlpManager } = require('node-nlp')
 const _ = require('lodash')
-const debug = require('debug')('botium-nlp-kfold')
+const debugKfold = require('debug')('botium-nlp-kfold')
+const debugLoocv = require('debug')('botium-nlp-loocv')
+const debugValidation = require('debug')('botium-nlp-validation')
 const { guessLanguageForIntents } = require('./language')
 
 const _splitArray = (array = [], nPieces = 1) => {
@@ -15,7 +17,7 @@ const _splitArray = (array = [], nPieces = 1) => {
   return splitArray
 }
 
-const trainClassification = async (intents, { lang = null, sample = null } = {}) => {
+const trainClassification = async (intents, { lang = null, sample = null, debug = debugKfold } = {}) => {
   if (!intents || intents.length === 0) {
     throw new Error('Training failed, no intents given.')
   }
@@ -62,7 +64,7 @@ const loocv = async (intents, { lang = null, sample = null, trainingSample = nul
 
   if (!lang) {
     lang = await guessLanguageForIntents(intents)
-    debug(`Identified language ${lang}`)
+    debugLoocv(`Identified language ${lang}`)
   }
 
   const results = []
@@ -79,7 +81,7 @@ const loocv = async (intents, { lang = null, sample = null, trainingSample = nul
         intentName: intent.intentName,
         utterances: otherUtterances
       }
-    ], { lang, sample: trainingSample })
+    ], { lang, sample: trainingSample, debug: debugLoocv })
     const response = await classificator(utterance)
     const prediction = (response && response.length > 0 && response[0]) || null
     results.push({
@@ -94,14 +96,14 @@ const loocv = async (intents, { lang = null, sample = null, trainingSample = nul
   const allPromises = []
   intents.filter(i => onlyIntents ? onlyIntents.indexOf(i.intentName) >= 0 : true).forEach((intent, iindex) => {
     const sampleEntries = (sample && sample < intent.utterances.length) ? _.sampleSize([...intent.utterances.entries()], sample) : [...intent.utterances.entries()]
-    debug(`Running LOOCV for ${sampleEntries.length} utterances (of ${intent.utterances.length}) for intent ${intent.intentName}`)
+    debugLoocv(`Running LOOCV for ${sampleEntries.length} utterances (of ${intent.utterances.length}) for intent ${intent.intentName}`)
     for (const [uindex, utterance] of sampleEntries) {
       allPromises.push(runSingle(intent, utterance, iindex, uindex))
     }
   })
-  debug(`Running LOOCV, waiting for ${allPromises.length} results.`)
+  debugLoocv(`Running LOOCV, waiting for ${allPromises.length} results.`)
   await Promise.all(allPromises)
-  debug(`Running LOOCV, got ${results.length} results.`)
+  debugLoocv(`Running LOOCV, got ${results.length} results.`)
 
   const score = results.filter(r => r.match).length / results.length
   return {
@@ -111,7 +113,7 @@ const loocv = async (intents, { lang = null, sample = null, trainingSample = nul
   }
 }
 
-const makeFolds = (intents, { k, shuffle = false, onlyIntents = null } = {}) => {
+const makeFolds = (intents, { k, shuffle = false, onlyIntents = null, debug = debugKfold } = {}) => {
   const result = []
 
   for (let i = 0; i < k; i++) {
@@ -168,10 +170,10 @@ const makeSplit = async (intents, { ratio = 0.5, shuffle = false } = {}) => {
   return splittedUtterances
 }
 
-const runKFold = async (intents, { lang = null, k = 5, shuffle = false, onlyIntents = null } = {}) => {
-  const folds = makeFolds(intents, { k, shuffle, onlyIntents })
+const runKFold = async (intents, { lang = null, k = 5, shuffle = false, trainingSample = null, onlyIntents = null } = {}) => {
+  const folds = makeFolds(intents, { k, shuffle, onlyIntents, debug: debugKfold })
   if (folds.findIndex(fold => fold.findIndex(i => i.test && i.test.length > 0) >= 0) < 0) {
-    debug('No folds created, too less data.')
+    debugKfold('No folds created, too less data.')
     return {
       lang,
       avgPrecision: NaN,
@@ -181,16 +183,16 @@ const runKFold = async (intents, { lang = null, k = 5, shuffle = false, onlyInte
       predictionDetails: []
     }
   }
-  debug(`Created ${k} folds (shuffled: ${shuffle})`)
+  debugKfold(`Created ${k} folds (shuffled: ${shuffle})`)
   if (!lang) {
     lang = await guessLanguageForIntents(intents)
-    debug(`Identified language ${lang}`)
+    debugKfold(`Identified language ${lang}`)
   }
 
   const foldMatrices = []
   const predictionDetails = []
 
-  for (let k = 0; k < folds.length; k++) {
+  await Promise.all([...Array(k).keys()].map(async (k) => {
     const foldIntents = folds[k]
 
     const trainingData = foldIntents.map(fi => ({
@@ -199,16 +201,16 @@ const runKFold = async (intents, { lang = null, k = 5, shuffle = false, onlyInte
     }))
 
     try {
-      debug(`Starting training for fold ${k + 1}`)
-      const classificator = await trainClassification(trainingData, { lang })
+      debugKfold(`Starting training ${trainingData.length} intents for fold ${k + 1}`)
+      const classificator = await trainClassification(trainingData, { lang, sample: trainingSample, debug: debugKfold })
 
-      debug(`Starting testing for fold ${k + 1}`)
       const testIntents = foldIntents.filter(fi => fi.test)
+      debugKfold(`Starting testing ${testIntents.length} intents for fold ${k + 1}`)
 
-      const intentPromises = testIntents.map(async (foldIntent) => {
+      await Promise.all(testIntents.map((foldIntent) => {
         foldIntent.predictions = {}
 
-        for (const utterance of foldIntent.test) {
+        return Promise.all(foldIntent.test.map(async (utterance) => {
           const response = await classificator(utterance)
           const prediction = (response && response.length > 0 && response[0]) || { intentName: 'None', score: 0.0 }
 
@@ -221,9 +223,8 @@ const runKFold = async (intents, { lang = null, k = 5, shuffle = false, onlyInte
             match: foldIntent.intentName === prediction.intentName,
             score: prediction.score
           })
-        }
-      })
-      await Promise.all(intentPromises)
+        }))
+      }))
 
       const expectedIntents = {}
       for (const testIntent of testIntents) {
@@ -280,12 +281,12 @@ const runKFold = async (intents, { lang = null, k = 5, shuffle = false, onlyInte
       }
       foldMatrices.push(foldMatrix)
 
-      debug(`K-Fold Round ${k + 1}: Precision=${foldMatrix.precision.toFixed(4)} Recall=${foldMatrix.recall.toFixed(4)} F1-Score=${foldMatrix.F1.toFixed(4)}`)
+      debugKfold(`K-Fold Round ${k + 1}: Precision=${foldMatrix.precision.toFixed(4)} Recall=${foldMatrix.recall.toFixed(4)} F1-Score=${foldMatrix.F1.toFixed(4)}`)
     } catch (err) {
-      debug(`K-Fold testing for fold ${k + 1} failed: ${err.message}`)
+      debugKfold(`K-Fold testing for fold ${k + 1} failed: ${err.message}`)
       throw new Error(`K-Fold testing for fold ${k + 1} failed: ${err.message}`)
     }
-  }
+  }))
 
   const avgPrecision = foldMatrices.reduce((sum, r) => sum + r.precision, 0) / foldMatrices.length
   const avgRecall = foldMatrices.reduce((sum, r) => sum + r.recall, 0) / foldMatrices.length
@@ -294,13 +295,13 @@ const runKFold = async (intents, { lang = null, k = 5, shuffle = false, onlyInte
     avgF1 = 2 * ((avgPrecision * avgRecall) / (avgPrecision + avgRecall))
   }
 
-  if (debug.enabled) {
-    debug('############# Summary #############')
+  if (debugKfold.enabled) {
+    debugKfold('############# Summary #############')
     for (let k = 0; k < foldMatrices.length; k++) {
       const foldMatrix = foldMatrices[k]
-      debug(`K-Fold Round ${k + 1}: Precision=${foldMatrix.precision.toFixed(4)} Recall=${foldMatrix.recall.toFixed(4)} F1-Score=${foldMatrix.F1.toFixed(4)}`)
+      debugKfold(`K-Fold Round ${k + 1}: Precision=${foldMatrix.precision.toFixed(4)} Recall=${foldMatrix.recall.toFixed(4)} F1-Score=${foldMatrix.F1.toFixed(4)}`)
     }
-    debug(`K-Fold Avg: Precision=${avgPrecision.toFixed(4)} Recall=${avgRecall.toFixed(4)} F1-Score=${avgF1.toFixed(4)}`)
+    debugKfold(`K-Fold Avg: Precision=${avgPrecision.toFixed(4)} Recall=${avgRecall.toFixed(4)} F1-Score=${avgF1.toFixed(4)}`)
   }
 
   return {
@@ -313,10 +314,10 @@ const runKFold = async (intents, { lang = null, k = 5, shuffle = false, onlyInte
   }
 }
 
-const runValidation = async (trainIntents, testIntents, { lang = null } = {}) => {
+const runValidation = async (trainIntents, testIntents, { lang = null, trainingSample = null } = {}) => {
   if (!lang) {
     lang = await guessLanguageForIntents(trainIntents)
-    debug(`Identified language ${lang}`)
+    debugValidation(`Identified language ${lang}`)
   }
 
   const predictionDetails = []
@@ -326,14 +327,14 @@ const runValidation = async (trainIntents, testIntents, { lang = null } = {}) =>
   }
 
   try {
-    debug('Starting training ...')
-    const classificator = await trainClassification(trainIntents, { lang })
+    debugValidation(`Starting training ${trainIntents.length} intents ...`)
+    const classificator = await trainClassification(trainIntents, { lang, sample: trainingSample, debug: debugValidation })
 
-    debug('Starting testing ...')
-    const intentPromises = testIntents.map(async (intent) => {
+    debugValidation(`Starting testing ${testIntents.length} intents ...`)
+    await Promise.all(testIntents.map(intent => {
       intent.predictions = {}
 
-      for (const utterance of intent.utterances) {
+      return Promise.all(intent.utterances.map(async (utterance) => {
         const response = await classificator(utterance)
         const prediction = (response && response.length > 0 && response[0]) || { intentName: 'None', score: 0.0 }
 
@@ -345,9 +346,8 @@ const runValidation = async (trainIntents, testIntents, { lang = null } = {}) =>
           match: intent.intentName === prediction.intentName,
           score: prediction.score
         })
-      }
-    })
-    await Promise.all(intentPromises)
+      }))
+    }))
 
     const expectedIntents = {}
     for (const testIntent of testIntents) {
@@ -400,13 +400,13 @@ const runValidation = async (trainIntents, testIntents, { lang = null } = {}) =>
       validateMatrix.F1 = 2 * ((validateMatrix.precision * validateMatrix.recall) / (validateMatrix.precision + validateMatrix.recall))
     }
 
-    if (debug.enabled) {
-      debug('############# Summary #############')
-      debug(`Validate: Precision=${validateMatrix.precision.toFixed(4)} Recall=${validateMatrix.recall.toFixed(4)} F1-Score=${validateMatrix.F1.toFixed(4)}`)
+    if (debugValidation.enabled) {
+      debugValidation('############# Summary #############')
+      debugValidation(`Validate: Precision=${validateMatrix.precision.toFixed(4)} Recall=${validateMatrix.recall.toFixed(4)} F1-Score=${validateMatrix.F1.toFixed(4)}`)
     }
     return validateMatrix
   } catch (err) {
-    debug(`Validation failed: ${err.message}`)
+    debugValidation(`Validation failed: ${err.message}`)
     throw new Error(`Validation failed: ${err.message}`)
   }
 }
