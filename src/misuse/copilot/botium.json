@@ -1,0 +1,16 @@
+{
+  "botium": {
+    "Capabilities": {
+      "PROJECTNAME": "Botium Samples - Copilot - Botium Tech Questions",
+      "CONTAINERMODE": "copilot",
+      "COPILOT_WEBSOCKET": false,
+      "COPILOT_POLLINGINTERVAL": 1000,
+      "COPILOT_GENERATE_USERNAME": false,
+      "COPILOT_BUTTON_TYPE": "",
+      "COPILOT_BUTTON_VALUE_FIELD": "",
+      "WAITFORBOTTIMEOUT": 30000
+    },
+    "Sources": {},
+    "Envs": {}
+  }
+}
