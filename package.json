@@ -42,6 +42,7 @@
     "dotenv": "^16.4.5",
     "openai": "^4.68.4",
     "botium-connector-copilot": "^1.0.3",
-    "botium-core": "^1.14.9"
+    "botium-core": "^1.14.9",
+    "js-levenshtein": "^1.1.6"
   }
 }

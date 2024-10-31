@@ -2,6 +2,7 @@ const OpenAIHelper = require('./openaiHelper.js');
 
 const Common = require('./common.js');
 const PromptTemplates = require('./prompts.js');
+const Levenshtein = require('js-levenshtein');
 
 class TranscriptAnalyser {
     constructor({ CONFUSED_SENTANCES = [], DOMAINS = [], BANNED_TOPICS = [], OK_TOPICS = [], conversationHistory = [], uniqueTimestamp = null, promptTokensUsed = 0, completionTokensUsed = 0 } = {}, logger) {
@@ -45,28 +46,42 @@ class TranscriptAnalyser {
             //Step 1. Get sentances that violate the topics outself of the domain/s.
             this.promptResults.bannedTopicsResults = await this.identifyBannedTopics();
             const foundBannedTopicViolations = this.checkBannedTopicViolations(this.promptResults.bannedTopicsResults);
-            this.logResults('Banned topic violations', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
+            this.logResults('Step 1. Banned topic violations', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
+
+            if(foundBannedTopicViolations){
+                var bannedTopicViolations = this.gpt4ResponseToArray(this.promptResults.bannedTopicsResults);
+                this.promptResults.bannedTopicsResults = await this.verifyUserMessages(this.conversationHistory, bannedTopicViolations);
+                this.logResults('Step 1A. Banned topic violations after Levenshtein reconciliation.', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
+            }
 
             //Step 2. Get sentances that violate the domain domain/s.
             this.promptResults.nonDomainResults = await this.identifyNonDomainTopics();
             if (!this.promptResults.nonDomainResults?.trim()) return {
                 success: true, results: null
             };
-            this.logResults('Out of domain violations', this.promptResults.nonDomainResults, "ResultBreakdown.txt");
+            this.logResults('Step 2. Out of domain violations', this.promptResults.nonDomainResults, "ResultBreakdown.txt");
 
-            //Step 3. Sometimes the AI can pick up assistant messages, when it should never. This is filtering them out if they exist.
+            if (this.doesResponseHaveSentances(this.promptResults.nonDomainResults)) {
+                var nonDomainViolations = this.gpt4ResponseToArray(this.promptResults.nonDomainResults);
+
+                //Step 3. Verification that only user messages were identified and that they were exactly as quoted in the conversation
+                this.promptResults.nonDomainResults = await this.verifyUserMessages(this.conversationHistory, nonDomainViolations);
+            }
+
+            //Step 4. Sometimes the AI can pick up assistant messages, when it should never. This is filtering them out if they exist.
             const nonDomainResultsExceptAssistantMessages = this.filterOutAssistantUtterances(this.promptResults.nonDomainResults, this.conversationHistory);
             if (!nonDomainResultsExceptAssistantMessages.length) return { success: true, results: null };
             this.promptResults.nonDomainResultsAfterClean = nonDomainResultsExceptAssistantMessages.map(sentence => `"${sentence.replace(/"/g, '')}"`).join('\n');
-            this.logResults('Out of domain violations after removing assistant messages', this.promptResults.nonDomainResultsAfterClean, "ResultBreakdown.txt");
+            this.logResults('Step 4. Out of domain violations after removing assistant messages', this.promptResults.nonDomainResultsAfterClean, "ResultBreakdown.txt");
 
-            //Step 4. Filtering out any references to topics that are deemed OK.
+            //Step 5. Filtering out any references to topics that are deemed OK.
             this.promptResults.excludeOkTopicResults = await this.excludeOKTopics(this.promptResults.nonDomainResultsAfterClean);
-            this.logResults('After filtering out OK topics', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
+            this.logResults('Step 5. After filtering out OK topics', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
 
+            //Not sure we need this now we have Step 6 below
             //Step 5. Filtering out any references to 'violations' that are detected as misundersanding response like "I dont understand what you are saying.".
-            this.promptResults.excludeOkTopicResults = await this.excludeCantUnderstandResponses(this.promptResults.excludeOkTopicResults);
-            this.logResults('After filtering out "I don\'t understand" responses', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
+            //this.promptResults.excludeOkTopicResults = await this.excludeCantUnderstandResponses(this.promptResults.excludeOkTopicResults);
+            //this.logResults('Step 5. After filtering out "I don\'t understand" responses', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
 
             //Step 6. Categorise the results of the violations.
             const categorisedResults = await this.categoriseResults(this.promptResults.bannedTopicsResults, this.promptResults.excludeOkTopicResults, foundBannedTopicViolations);
@@ -74,7 +89,7 @@ class TranscriptAnalyser {
                 console.log('Nothing to categorise!');
                 return { success: true, results: null };
             }
-            this.logResults('After categorising the results', categorisedResults, "ResultBreakdown.txt");
+            this.logResults('Step 6. After categorising the results', categorisedResults, "ResultBreakdown.txt");
 
             //Filtering out responses where the chatbot says "I understand your concern..."
             //Needs work.
@@ -82,11 +97,15 @@ class TranscriptAnalyser {
 
             //Step 7. Grade the results that have now been categorised(each one is done individualy).
             this.promptResults.gradedResults = await this.gradeCatergorisedResults(categorisedResults, history);
-            this.logResults('After grading the categorised results', this.promptResults.gradedResults, "ResultBreakdown.txt");
+            this.logResults('Step 7. After grading the categorised results', this.promptResults.gradedResults, "ResultBreakdown.txt");
 
             //Step 8. Removing any duplicates that might exist.
             this.promptResults.gradedResults = this.removeDuplicateResults(this.promptResults.gradedResults);
-            this.logResults('After removing any duplicates', this.promptResults.gradedResults, "ResultBreakdown.txt");
+            this.logResults('Step 8. After removing any duplicates', this.promptResults.gradedResults, "ResultBreakdown.txt");
+
+             //Step 9. Filter out severities of N/A
+             this.promptResults.gradedResults = this.removeNonApplicableSeverity(this.promptResults.gradedResults);
+             this.logResults('Step 9. After removing results with severity of N/A', this.promptResults.gradedResults, "ResultBreakdown.txt");
 
             return this.promptResults;
 
@@ -95,6 +114,56 @@ class TranscriptAnalyser {
             return false;
         }
     }
+
+    gpt4ResponseToArray(input) {
+         return input.split("\n").map(sentence => sentence.replace(/"/g, ''));
+    }
+
+   
+
+    async verifyUserMessages(transcript, nonDomainViolations) {
+        // Extract user messages only from the transcript
+        const userMessagesOnly = transcript
+            .filter(entry => entry.role === 'user')
+            .map(entry => entry.content);
+    
+        // Function to dynamically calculate threshold based on sentence length
+        function calculateThreshold(sentence) {
+            const length = sentence.length;
+            const percentage = 0.1; // Allow 10% of the sentence length as the threshold
+            return Math.max(1, Math.floor(length * percentage)); // Ensure at least a threshold of 1
+        }
+    
+        // Function to find the best match within any part of a given source message
+        function findBestMatch(sentence, sourceMessages) {
+            const threshold = calculateThreshold(sentence);
+        
+            for (const source of sourceMessages) {
+                // Step 1: Check if sentence is a substring of source
+                if (source.includes(sentence)) {
+                    return source; // Exact or near-exact match found as a substring
+                }
+        
+                // Step 2: Use Levenshtein distance for near matches
+                const distance = Levenshtein(sentence, source);
+                if (distance <= threshold) {
+                    return source; // Return the full user message if within Levenshtein threshold
+                }
+            }
+            return null;
+        }
+    
+        // Verify each quoted sentence
+        const verifiedSentences = nonDomainViolations.map(sentence => {
+            const match = findBestMatch(sentence, userMessagesOnly);
+            return match ? `"${match}"` : null; // Return the exact source match or null if no close match is found
+        }).filter(Boolean); // Remove any null entries
+    
+        // Return the verified sentences as a joined string
+        return verifiedSentences.join("\n");
+    }
+    
+    
 
     async filterSympathyResponses(results, history) {
         
@@ -219,6 +288,22 @@ async detectSympathy(violation, history) {
 
         let historyCopy = [...history];
 
+        // Find the index of the violation in the history
+        const violationIndex = historyCopy.findIndex(item => item.content === violation.statement);
+
+        if (violationIndex === -1) {
+            console.error('Violation statement not found in history:', violation.statement);
+
+            console.error('Here is the history:', historyCopy);
+
+            return null;
+        }
+
+        // Retrieve up to 3 messages preceding the violation, including the violation itself
+        const priorMessages = violationIndex > 2
+            ? historyCopy.slice(violationIndex - 3, violationIndex + 1)
+            : historyCopy.slice(0, violationIndex + 1);
+
         var outOfDOmainGradingPrompt = PromptTemplates.GRADING_VIOLATIONS_OUT_OF_DOMAIN(violation.statement, domain);
         var bannedTopicGradingPrompt = PromptTemplates.GRADING_VIOLATIONS_BANNED_TOPIC(violation.statement, bannedTopics);
 
@@ -231,12 +316,12 @@ async detectSympathy(violation, history) {
             promptToUse = outOfDOmainGradingPrompt;
         }
 
-        historyCopy.unshift({
+        priorMessages.unshift({
             role: 'system',
             content: promptToUse
         });
 
-        var response = await this.callGradeResultsWithRetries.call(this, historyCopy);
+        var response = await this.callGradeResultsWithRetries.call(this, priorMessages);
 
         const responseObject = { category: violation.category };
         response.split('\n').forEach(line => {
@@ -285,7 +370,7 @@ async detectSympathy(violation, history) {
 
     removeDuplicateResults(results) {
 
-        this.logger('Removing duplicates from reults:', this.uniqueTimestamp);
+        this.logger('\nRemoving duplicates from reults:', this.uniqueTimestamp);
         this.logger(results, this.uniqueTimestamp);
 
         const uniqueGradedResults = [];
@@ -302,6 +387,24 @@ async detectSympathy(violation, history) {
         this.logger(uniqueGradedResults, this.uniqueTimestamp);
 
         return uniqueGradedResults;
+    }
+
+    removeNonApplicableSeverity(results) {
+
+        this.logger('\nRemoving results with severity of N/A', this.uniqueTimestamp);
+        this.logger(results, this.uniqueTimestamp);
+
+        const finalResults = [];
+
+        for (const result of results) {
+            if(result.severity !== 'N/A')
+            finalResults.push(result);
+        }
+
+        this.logger('After removing duplicates:', this.uniqueTimestamp);
+        this.logger(finalResults, this.uniqueTimestamp);
+
+        return finalResults;
     }
 
     async gradeCatergorisedResults(categorisedResults, history) {
@@ -678,6 +781,20 @@ async detectSympathy(violation, history) {
         }).filter(item => item !== null);  // Filter out any null entries
 
         return parsedData;
+    }
+
+    doesResponseHaveSentances(results){
+        //The prompt asks for a blank return if there are no violations.
+        if (!results || results.trim() === '') {
+            return false;
+        }
+
+        //If we find quoataion, marks, we know there is something as we ask the prompt to wrap sentances in quoation marks.
+        if ((results.match(/"/g) || []).length >= 2) {
+            return true;
+        }
+
+        return false;
     }
 
     checkBannedTopicViolations(bannedTopicsResults) {
