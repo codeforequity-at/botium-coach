@@ -78,22 +78,12 @@ class TranscriptAnalyser {
             this.promptResults.excludeOkTopicResults = await this.excludeOKTopics(this.promptResults.nonDomainResultsAfterClean);
             this.logResults('Step 5. After filtering out OK topics', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
 
-            //Not sure we need this now we have Step 6 below
-            //Step 5. Filtering out any references to 'violations' that are detected as misundersanding response like "I dont understand what you are saying.".
-            //this.promptResults.excludeOkTopicResults = await this.excludeCantUnderstandResponses(this.promptResults.excludeOkTopicResults);
-            //this.logResults('Step 5. After filtering out "I don\'t understand" responses', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
-
             //Step 6. Categorise the results of the violations.
             const categorisedResults = await this.categoriseResults(this.promptResults.bannedTopicsResults, this.promptResults.excludeOkTopicResults, foundBannedTopicViolations);
             if (!categorisedResults) {
-                console.log('Nothing to categorise!');
                 return { success: true, results: null };
             }
             this.logResults('Step 6. After categorising the results', categorisedResults, "ResultBreakdown.txt");
-
-            //Filtering out responses where the chatbot says "I understand your concern..."
-            //Needs work.
-            //this.promptResults.gradedResults = await this.filterSympathyResponses(categorisedResults, history);
 
             //Step 7. Grade the results that have now been categorised(each one is done individualy).
             this.promptResults.gradedResults = await this.gradeCatergorisedResults(categorisedResults, history);
@@ -162,92 +152,6 @@ class TranscriptAnalyser {
         // Return the verified sentences as a joined string
         return verifiedSentences.join("\n");
     }
-    
-    
-
-    async filterSympathyResponses(results, history) {
-        
-        this.logger('\nFiltering out sentances where the chatbot is saying "I understand your concern...": \n', this.uniqueTimestamp);
-        this.logger('Results before removing "I understand responses":', this.uniqueTimestamp);
-        this.logger(results, this.uniqueTimestamp);
-
-        const finalResults = [];
-
-        for (const result of results) {
-
-            var isSympathyOnly = await this.detectSympathy(result, history);
-
-            if (isSympathyOnly === false) {
-                finalResults.push(result);
-                console.log("VIOATION: " + result.statement);
-            }
-            else {
-                console.log("EXCUSED: " + result.statement);
-            }
-        }
-
-        this.logger('\nResults after removing "I understand responses":', this.uniqueTimestamp);
-        this.logger(finalResults, this.uniqueTimestamp);
-
-        return finalResults;
-    }
-
-async detectSympathy(violation, history) {
-
-        var domain = this.commonInstance.formatTopicList(this.DOMAINS, true)
-        var bannedTopics = this.commonInstance.formatTopicList(this.BANNED_TOPICS, true)
-
-        let historyCopy = [...history];
-
-        var outOfDomainPrompt = PromptTemplates.DOMAIN_ADHERENCE_SYMPATHY_CHECK(violation.statement, domain);
-        var bannedTopicPrompt = PromptTemplates.TOPIC_ADHERENCE_SYMPATHY_CHECK(violation.statement, bannedTopics);
-
-        var promptToUse = null;
-
-        if (violation.type === 'banned') {
-            promptToUse = bannedTopicPrompt;
-        }
-        else if (violation.type === 'out of domain') {
-            promptToUse = outOfDomainPrompt;
-        }
-
-        //console.log('Prompt', promptToUse)
-        
-        //Adding the prompt as the first message of the entire conversation.
-        historyCopy.unshift({
-            role: 'system',
-            content: promptToUse
-        });
-
-        return await this.callDetectSympathyWithRetries.call(this, historyCopy);
-    }
-
-    async callDetectSympathyWithRetries(entireConvoIncludingPrompt, maxRetries = 5) {
-
-        let attempts = 0;
-        let response;
-
-        while (attempts < maxRetries) {
-            attempts++;
-
-            response = await this.sympathyDetection(entireConvoIncludingPrompt);
-            
-            if (this.isExpectedFormatExcusedOrViolation(response)) {
-
-                if(response.trim().toLowerCase() === 'non-violation')
-                    return true;
-                else
-                    return false; 
-            }
-
-            this.logger(`Attempt ${attempts} failed. Retrying...`, this.uniqueTimestamp);
-
-        }
-
-        this.logger("Unable to determine if bot message was being sympathetic. Assuming that it was not.", this.uniqueTimestamp);
-
-        return false;
-    }
 
     async sympathyDetection(messagesForGPT) {
 
@@ -289,7 +193,9 @@ async detectSympathy(violation, history) {
         let historyCopy = [...history];
 
         // Find the index of the violation in the history
-        const violationIndex = historyCopy.findIndex(item => item.content === violation.statement);
+        const violationIndex = historyCopy.findIndex(
+            item => item.content.replace(/\s+/g, ' ').trim() === violation.statement.replace(/\s+/g, ' ').trim()
+        );
 
         if (violationIndex === -1) {
             console.error('Violation statement not found in history:', violation.statement);
@@ -468,25 +374,6 @@ async detectSympathy(violation, history) {
         return result;
     }
 
-    async excludeCantUnderstandResponses(results) {
-
-        var result = null;
-
-        if (this.CONFUSED_SENTANCES.length > 0) {
-            this.logger('\nExcluding responses where the bot is confused...', this.uniqueTimestamp);
-            this.logger('Before excluding confused topics: \n ' + results, this.uniqueTimestamp);
-            result = await this.excludeConfusedBotResponses(
-                this.CONFUSED_SENTANCES, results, this.sendRequestAndUpdateTokens.bind(this)
-            );
-        } else {
-            result = results;
-        }
-
-        this.logger('After excluding confused topics' + result, this.uniqueTimestamp);
-
-        return result;
-    }
-
     async sendRequestWithLogging(prompt, userMessage, logFileName) {
         const result = await this.sendRequestAndUpdateTokens(
             [{ role: 'system', content: prompt },
@@ -513,20 +400,6 @@ async detectSympathy(violation, history) {
         } else {
 
             return this.promptResults.nonDomainResultsAfterClean;
-        }
-    }
-
-    async excludeConfusedBotResponses(CONFUSED_SENTANCES, results) {
-        const okTopicPrompt = PromptTemplates.DETECT_CONFUSED_PROMPT(CONFUSED_SENTANCES);
-        const userMessage = `The responses to be reviewed are: \n${results}\n\nThe known list of confusion responses is: ["${CONFUSED_SENTANCES.join('", "')}"]`;
-
-        if (CONFUSED_SENTANCES.length > 0 && results && results.trim()) {
-            return await this.sendRequestWithLogging(okTopicPrompt, userMessage, "ConfusedPrompt.txt");
-        } else {
-
-            this.logger("No results to be sent for confusion checks.", this.uniqueTimestamp, "ConfusedPrompt.txt");
-
-            return this.promptResults.excludeOkTopicResults;
         }
     }
 
@@ -667,17 +540,13 @@ async detectSympathy(violation, history) {
         }
 
         if (categorisedViolations.length == 0) {
-
-            this.logger("NOTHING TO CATEGORISE!", this.uniqueTimestamp, "CategoriseResultsPrompt.txt");
-
             return null;
         }
 
         this.logger("PROMPT: \n " + PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT(), this.uniqueTimestamp, "CategoriseResultsPrompt.txt");
         this.logger("Sentances: \n" +
             (bannedTopicViolations && bannedTopicViolations.trim() ? bannedTopicViolations : 'No banned topic results') + '\n' +
-            (outOfDomainViolations && outOfDomainViolations.trim() ? outOfDomainViolations : 'No excluded OK topic results'),
-            this.uniqueTimestamp, "CategoriseResultsPrompt.txt");
+            (outOfDomainViolations && outOfDomainViolations.trim() ? outOfDomainViolations : 'No excluded OK topic results'), this.uniqueTimestamp, "CategoriseResultsPrompt.txt");
         this.logger("\n \nGPT-4 RESPONSE: \n" + JSON.stringify(categorisedViolations, null, 2), this.uniqueTimestamp, "CategoriseResultsPrompt.txt");
 
         return categorisedViolations;
