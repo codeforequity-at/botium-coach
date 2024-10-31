@@ -45,28 +45,28 @@ class TranscriptAnalyser {
             //Step 1. Get sentances that violate the topics outself of the domain/s.
             this.promptResults.bannedTopicsResults = await this.identifyBannedTopics();
             const foundBannedTopicViolations = this.checkBannedTopicViolations(this.promptResults.bannedTopicsResults);
-            this.logger(`\n---> Banned topic violations <--- \n${JSON.stringify(this.promptResults.bannedTopicsResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+            this.logResults('Banned topic violations', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
 
             //Step 2. Get sentances that violate the domain domain/s.
             this.promptResults.nonDomainResults = await this.identifyNonDomainTopics();
             if (!this.promptResults.nonDomainResults?.trim()) return {
                 success: true, results: null
             };
-            this.logger(`\n---> Out of domain violations <--- \n${JSON.stringify(this.promptResults.nonDomainResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+            this.logResults('Out of domain violations', this.promptResults.nonDomainResults, "ResultBreakdown.txt");
 
             //Step 3. Sometimes the AI can pick up assistant messages, when it should never. This is filtering them out if they exist.
             const nonDomainResultsExceptAssistantMessages = this.filterOutAssistantUtterances(this.promptResults.nonDomainResults, this.conversationHistory);
             if (!nonDomainResultsExceptAssistantMessages.length) return { success: true, results: null };
             this.promptResults.nonDomainResultsAfterClean = nonDomainResultsExceptAssistantMessages.map(sentence => `"${sentence.replace(/"/g, '')}"`).join('\n');
-            this.logger(`\n---> Out of domain violations after removing assistant messages <--- \n${JSON.stringify(this.promptResults.nonDomainResultsAfterClean, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+            this.logResults('Out of domain violations after removing assistant messages', this.promptResults.nonDomainResultsAfterClean, "ResultBreakdown.txt");
 
             //Step 4. Filtering out any references to topics that are deemed OK.
             this.promptResults.excludeOkTopicResults = await this.excludeOKTopics(this.promptResults.nonDomainResultsAfterClean);
-            this.logger(`\n---> After filtering out OK topics <---\n${JSON.stringify(this.promptResults.excludeOkTopicResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+            this.logResults('After filtering out OK topics', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
 
             //Step 5. Filtering out any references to 'violations' that are detected as misundersanding response like "I dont understand what you are saying.".
             this.promptResults.excludeOkTopicResults = await this.excludeCantUnderstandResponses(this.promptResults.excludeOkTopicResults);
-            this.logger(`\n---> After filtering out 'violations' that are detected as misundersanding response like "I dont understand what you are saying" <--- \n${JSON.stringify(this.promptResults.excludeOkTopicResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+            this.logResults('After filtering out "I don\'t understand" responses', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
 
             //Step 6. Categorise the results of the violations.
             const categorisedResults = await this.categoriseResults(this.promptResults.bannedTopicsResults, this.promptResults.excludeOkTopicResults, foundBannedTopicViolations);
@@ -74,7 +74,7 @@ class TranscriptAnalyser {
                 console.log('Nothing to categorise!');
                 return { success: true, results: null };
             }
-            this.logger(`\n---> After Categorsing the results.  <---\n${JSON.stringify(categorisedResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+            this.logResults('After categorising the results', categorisedResults, "ResultBreakdown.txt");
 
             //Filtering out responses where the chatbot says "I understand your concern..."
             //Needs work.
@@ -82,11 +82,11 @@ class TranscriptAnalyser {
 
             //Step 7. Grade the results that have now been categorised(each one is done individualy).
             this.promptResults.gradedResults = await this.gradeCatergorisedResults(categorisedResults, history);
-            this.logger(`\n---> After grading the categorsed the results <--- \n${JSON.stringify(this.promptResults.gradedResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+            this.logResults('After grading the categorised results', this.promptResults.gradedResults, "ResultBreakdown.txt");
 
             //Step 8. Removing any duplicates that might exist.
             this.promptResults.gradedResults = this.removeDuplicateResults(this.promptResults.gradedResults);
-            this.logger(`\n---> After removing any duplicates <--- \n${JSON.stringify(this.promptResults.gradedResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+            this.logResults('After removing any duplicates', this.promptResults.gradedResults, "ResultBreakdown.txt");
 
             return this.promptResults;
 
@@ -708,6 +708,10 @@ async detectSympathy(violation, history) {
             console.error("Error checking banned topic violations:", error);
             return false;
         }
+    }
+
+    logResults(message, data, fileName) {
+        this.logger(`\n---> ${message} <--- \n${JSON.stringify(data, null, 2)}`, this.uniqueTimestamp, fileName);
     }
 }
 
