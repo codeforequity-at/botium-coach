@@ -43,18 +43,19 @@ class TranscriptAnalyser {
         this.logger('', this.uniqueTimestamp);
 
         try {
-            //Step 1. Get sentances that violate the topics outself of the domain/s.
+            //Step 1A. Get sentances that violate the topics outself of the domain/s.
             this.promptResults.bannedTopicsResults = await this.identifyBannedTopics();
             const foundBannedTopicViolations = this.checkBannedTopicViolations(this.promptResults.bannedTopicsResults);
             this.logResults('Step 1. Banned topic violations', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
 
             if(foundBannedTopicViolations){
+                //Step 1B. Ensure violations are exactly correct and only belong to user messages.
                 var bannedTopicViolations = this.gpt4ResponseToArray(this.promptResults.bannedTopicsResults);
                 this.promptResults.bannedTopicsResults = await this.verifyUserMessages(this.conversationHistory, bannedTopicViolations);
                 this.logResults('Step 1A. Banned topic violations after Levenshtein reconciliation.', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
             }
 
-            //Step 2. Get sentances that violate the domain domain/s.
+            //Step 2A. Get sentances that violate the domain domain/s.
             this.promptResults.nonDomainResults = await this.identifyNonDomainTopics();
             if (!this.promptResults.nonDomainResults?.trim()) return {
                 success: true, results: null
@@ -62,40 +63,34 @@ class TranscriptAnalyser {
             this.logResults('Step 2. Out of domain violations', this.promptResults.nonDomainResults, "ResultBreakdown.txt");
 
             if (this.doesResponseHaveSentances(this.promptResults.nonDomainResults)) {
+                //Step 2B. Ensure violations are exactly correct and only belong to user messages.
                 var nonDomainViolations = this.gpt4ResponseToArray(this.promptResults.nonDomainResults);
-
-                //Step 3. Verification that only user messages were identified and that they were exactly as quoted in the conversation
                 this.promptResults.nonDomainResults = await this.verifyUserMessages(this.conversationHistory, nonDomainViolations);
+                this.logResults('Step 2B. Out of domain violations after Levenshtein reconciliation.', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
             }
-
-            //Step 4. Sometimes the AI can pick up assistant messages, when it should never. This is filtering them out if they exist.
-            const nonDomainResultsExceptAssistantMessages = this.filterOutAssistantUtterances(this.promptResults.nonDomainResults, this.conversationHistory);
-            if (!nonDomainResultsExceptAssistantMessages.length) return { success: true, results: null };
-            this.promptResults.nonDomainResultsAfterClean = nonDomainResultsExceptAssistantMessages.map(sentence => `"${sentence.replace(/"/g, '')}"`).join('\n');
-            this.logResults('Step 4. Out of domain violations after removing assistant messages', this.promptResults.nonDomainResultsAfterClean, "ResultBreakdown.txt");
-
-            //Step 5. Filtering out any references to topics that are deemed OK.
-            this.promptResults.excludeOkTopicResults = await this.excludeOKTopics(this.promptResults.nonDomainResultsAfterClean);
-            this.logResults('Step 5. After filtering out OK topics', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
-
-            //Step 6. Categorise the results of the violations.
+  
+            //Step 3. Filtering out any references to topics that are deemed OK.
+            this.promptResults.excludeOkTopicResults = await this.excludeOKTopics(this.promptResults.nonDomainResults);
+            this.logResults('Step 3. After filtering out OK topics', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
+            
+            //Step 4. Categorise the results of the violations.
             const categorisedResults = await this.categoriseResults(this.promptResults.bannedTopicsResults, this.promptResults.excludeOkTopicResults, foundBannedTopicViolations);
             if (!categorisedResults) {
                 return { success: true, results: null };
             }
-            this.logResults('Step 6. After categorising the results', categorisedResults, "ResultBreakdown.txt");
+            this.logResults('Step 4. After categorising the results', categorisedResults, "ResultBreakdown.txt");
 
-            //Step 7. Grade the results that have now been categorised(each one is done individualy).
+            //Step 5. Grade the results that have now been categorised(each one is done individualy).
             this.promptResults.gradedResults = await this.gradeCatergorisedResults(categorisedResults, history);
-            this.logResults('Step 7. After grading the categorised results', this.promptResults.gradedResults, "ResultBreakdown.txt");
+            this.logResults('Step 5. After grading the categorised results', this.promptResults.gradedResults, "ResultBreakdown.txt");
 
-            //Step 8. Removing any duplicates that might exist.
+            //Step 6. Removing any duplicates that might exist.
             this.promptResults.gradedResults = this.removeDuplicateResults(this.promptResults.gradedResults);
-            this.logResults('Step 8. After removing any duplicates', this.promptResults.gradedResults, "ResultBreakdown.txt");
+            this.logResults('Step 6. After removing any duplicates', this.promptResults.gradedResults, "ResultBreakdown.txt");
 
-             //Step 9. Filter out severities of N/A
+             //Step 7. Filter out severities of N/A
              this.promptResults.gradedResults = this.removeNonApplicableSeverity(this.promptResults.gradedResults);
-             this.logResults('Step 9. After removing results with severity of N/A', this.promptResults.gradedResults, "ResultBreakdown.txt");
+             this.logResults('Step 7. After removing results with severity of N/A', this.promptResults.gradedResults, "ResultBreakdown.txt");
 
             return this.promptResults;
 
