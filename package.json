@@ -21,16 +21,17 @@
   },
   "homepage": "https://www.botium.ai",
   "devDependencies": {
+    "chai": "^4.3.7",
+    "chai-as-promised": "^7.1.1",
     "eslint": "^8.39.0",
     "eslint-config-standard": "^17.0.0",
     "eslint-plugin-import": "^2.27.5",
     "eslint-plugin-n": "^15.7.0",
     "eslint-plugin-promise": "^6.1.1",
     "eslint-plugin-standard": "^4.1.0",
-    "chai": "^4.3.7",
-    "chai-as-promised": "^7.1.1",
     "mocha": "^10.2.0",
-    "npm-check-updates": "^16.10.9"
+    "npm-check-updates": "^16.10.9",
+    "sinon": "^19.0.2"
   },
   "dependencies": {
     "debug": "^4.3.4",
@@ -39,10 +40,10 @@
     "node-nlp": "^4.26.1"
   },
   "peerDependencies": {
-    "dotenv": "^16.4.5",
-    "openai": "^4.68.4",
     "botium-connector-copilot": "^1.0.3",
     "botium-core": "^1.14.9",
-    "js-levenshtein": "^1.1.6"
+    "dotenv": "^16.4.5",
+    "js-levenshtein": "^1.1.6",
+    "openai": "^4.68.4"
   }
 }

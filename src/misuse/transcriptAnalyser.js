@@ -189,7 +189,7 @@ class TranscriptAnalyser {
 
         // Find the index of the violation in the history
         const violationIndex = historyCopy.findIndex(
-            item => item.content.replace(/\s+/g, ' ').trim() === violation.statement.replace(/\s+/g, ' ').trim()
+            item => item.content.replace(/\s+|\n|\r/g, ' ').trim() === violation.statement.replace(/\s+|\n|\r/g, ' ').trim()
         );
 
         if (violationIndex === -1) {
