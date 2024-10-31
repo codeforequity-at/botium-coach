@@ -29,19 +29,189 @@ class TranscriptAnalyser {
         this.commonInstance = new Common(this.logger);
     }
 
-    async sendRequestAndUpdateTokens(messages) {
-        const { result, prompt_tokens: promptUsed, completion_tokens: completionUsed } = await OpenAIHelper.sendOpenAIRequest(messages);
-        this.promptTokensUsed += promptUsed;
-        this.completionTokensUsed += completionUsed;
+    async analyseConversation(timeStamp, history) {
+        this.uniqueTimestamp = timeStamp;
+        this.conversationHistory = history;
+        this.logger('\nIdentifying misuse. Please be patient...', this.uniqueTimestamp, null, true);
 
-        if (result === null) {
-            console.log('result is null for some reason!!')
-            return null;
+        this.logger('Analysing with the following settings....', this.uniqueTimestamp);
+        this.logger('Banned Topics: ' + JSON.stringify(this.BANNED_TOPICS), this.uniqueTimestamp);
+        this.logger('Domains: ' + JSON.stringify(this.DOMAINS), this.uniqueTimestamp);
+        this.logger('OK Topics: ' + JSON.stringify(this.OK_TOPICS), this.uniqueTimestamp);
+        this.logger('Confused Sentences: ' + JSON.stringify(this.CONFUSED_SENTANCES), this.uniqueTimestamp);
+        this.logger('', this.uniqueTimestamp);
+
+        try {
+            //Step 1. Get sentances that violate the topics outself of the domain/s.
+            this.promptResults.bannedTopicsResults = await this.identifyBannedTopics();
+            const foundBannedTopicViolations = this.checkBannedTopicViolations(this.promptResults.bannedTopicsResults);
+            this.logger(`\n---> Banned topic violations <--- \n${JSON.stringify(this.promptResults.bannedTopicsResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+
+            //Step 2. Get sentances that violate the domain domain/s.
+            this.promptResults.nonDomainResults = await this.identifyNonDomainTopics();
+            if (!this.promptResults.nonDomainResults?.trim()) return {
+                success: true, results: null
+            };
+            this.logger(`\n---> Out of domain violations <--- \n${JSON.stringify(this.promptResults.nonDomainResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+
+            //Step 3. Sometimes the AI can pick up assistant messages, when it should never. This is filtering them out if they exist.
+            const nonDomainResultsExceptAssistantMessages = this.filterOutAssistantUtterances(this.promptResults.nonDomainResults, this.conversationHistory);
+            if (!nonDomainResultsExceptAssistantMessages.length) return { success: true, results: null };
+            this.promptResults.nonDomainResultsAfterClean = nonDomainResultsExceptAssistantMessages.map(sentence => `"${sentence.replace(/"/g, '')}"`).join('\n');
+            this.logger(`\n---> Out of domain violations after removing assistant messages <--- \n${JSON.stringify(this.promptResults.nonDomainResultsAfterClean, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+
+            //Step 4. Filtering out any references to topics that are deemed OK.
+            this.promptResults.excludeOkTopicResults = await this.excludeOKTopics(this.promptResults.nonDomainResultsAfterClean);
+            this.logger(`\n---> After filtering out OK topics <---\n${JSON.stringify(this.promptResults.excludeOkTopicResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+
+            //Step 5. Filtering out any references to 'violations' that are detected as misundersanding response like "I dont understand what you are saying.".
+            this.promptResults.excludeOkTopicResults = await this.excludeCantUnderstandResponses(this.promptResults.excludeOkTopicResults);
+            this.logger(`\n---> After filtering out 'violations' that are detected as misundersanding response like "I dont understand what you are saying" <--- \n${JSON.stringify(this.promptResults.excludeOkTopicResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+
+            //Step 6. Categorise the results of the violations.
+            const categorisedResults = await this.categoriseResults(this.promptResults.bannedTopicsResults, this.promptResults.excludeOkTopicResults, foundBannedTopicViolations);
+            if (!categorisedResults) {
+                console.log('Nothing to categorise!');
+                return { success: true, results: null };
+            }
+            this.logger(`\n---> After Categorsing the results.  <---\n${JSON.stringify(categorisedResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+
+            //Filtering out responses where the chatbot says "I understand your concern..."
+            //Needs work.
+            //this.promptResults.gradedResults = await this.filterSympathyResponses(categorisedResults, history);
+
+            //Step 7. Grade the results that have now been categorised(each one is done individualy).
+            this.promptResults.gradedResults = await this.gradeCatergorisedResults(categorisedResults, history);
+            this.logger(`\n---> After grading the categorsed the results <--- \n${JSON.stringify(this.promptResults.gradedResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+
+            //Step 8. Removing any duplicates that might exist.
+            this.promptResults.gradedResults = this.removeDuplicateResults(this.promptResults.gradedResults);
+            this.logger(`\n---> After removing any duplicates <--- \n${JSON.stringify(this.promptResults.gradedResults, null, 2)}`, this.uniqueTimestamp, "ResultBreakdown.txt");
+
+            return this.promptResults;
+
+        } catch (error) {
+            console.error("\nError analysing conversation:\n", error);
+            return false;
+        }
+    }
+
+    async filterSympathyResponses(results, history) {
+        
+        this.logger('\nFiltering out sentances where the chatbot is saying "I understand your concern...": \n', this.uniqueTimestamp);
+        this.logger('Results before removing "I understand responses":', this.uniqueTimestamp);
+        this.logger(results, this.uniqueTimestamp);
+
+        const finalResults = [];
+
+        for (const result of results) {
+
+            var isSympathyOnly = await this.detectSympathy(result, history);
+
+            if (isSympathyOnly === false) {
+                finalResults.push(result);
+                console.log("VIOATION: " + result.statement);
+            }
+            else {
+                console.log("EXCUSED: " + result.statement);
+            }
         }
 
+        this.logger('\nResults after removing "I understand responses":', this.uniqueTimestamp);
+        this.logger(finalResults, this.uniqueTimestamp);
+
+        return finalResults;
+    }
+
+async detectSympathy(violation, history) {
+
+        var domain = this.commonInstance.formatTopicList(this.DOMAINS, true)
+        var bannedTopics = this.commonInstance.formatTopicList(this.BANNED_TOPICS, true)
+
+        let historyCopy = [...history];
+
+        var outOfDomainPrompt = PromptTemplates.DOMAIN_ADHERENCE_SYMPATHY_CHECK(violation.statement, domain);
+        var bannedTopicPrompt = PromptTemplates.TOPIC_ADHERENCE_SYMPATHY_CHECK(violation.statement, bannedTopics);
+
+        var promptToUse = null;
+
+        if (violation.type === 'banned') {
+            promptToUse = bannedTopicPrompt;
+        }
+        else if (violation.type === 'out of domain') {
+            promptToUse = outOfDomainPrompt;
+        }
+
+        //console.log('Prompt', promptToUse)
+        
+        //Adding the prompt as the first message of the entire conversation.
+        historyCopy.unshift({
+            role: 'system',
+            content: promptToUse
+        });
+
+        return await this.callDetectSympathyWithRetries.call(this, historyCopy);
+    }
+
+    async callDetectSympathyWithRetries(entireConvoIncludingPrompt, maxRetries = 5) {
+
+        let attempts = 0;
+        let response;
+
+        while (attempts < maxRetries) {
+            attempts++;
+
+            response = await this.sympathyDetection(entireConvoIncludingPrompt);
+            
+            if (this.isExpectedFormatExcusedOrViolation(response)) {
+
+                if(response.trim().toLowerCase() === 'non-violation')
+                    return true;
+                else
+                    return false; 
+            }
+
+            this.logger(`Attempt ${attempts} failed. Retrying...`, this.uniqueTimestamp);
+
+        }
+
+        this.logger("Unable to determine if bot message was being sympathetic. Assuming that it was not.", this.uniqueTimestamp);
+
+        return false;
+    }
+
+    async sympathyDetection(messagesForGPT) {
+
+        var results = await this.sendRequestAndUpdateTokens(
+            messagesForGPT
+        );
+
+        this.logger("PROMPT: \n " + JSON.stringify(messagesForGPT, null, 2), this.uniqueTimestamp, "SympathyDetection.txt");
+        this.logger("", this.uniqueTimestamp);
+        this.logger("\n \nGPT-4 RESPONSE: \n" + results, this.uniqueTimestamp, "SympathyDetection.txt");
+
+        return results;
+    }
+
+    async sendRequestAndUpdateTokens(messages) {
+    
+        const response = await OpenAIHelper.sendOpenAIRequest(messages);
+    
+        if (!response) {
+            console.log('result is null for some reason!!');
+            console.log('This is what was being sent to GPT', messages);
+            return null;
+        }
+    
+        const { result, prompt_tokens: promptUsed, completion_tokens: completionUsed } = response;
+    
+        this.promptTokensUsed += promptUsed;
+        this.completionTokensUsed += completionUsed;
+    
         return result;
     }
-   
+    
+
     async gradeVolation(violation, history) {
 
         var domain = this.commonInstance.formatTopicList(this.DOMAINS, true)
@@ -86,86 +256,35 @@ class TranscriptAnalyser {
     async callGradeResultsWithRetries(historyCopy, maxRetries = 5) {
         let attempts = 0;
         let response;
-    
+
         while (attempts < maxRetries) {
             attempts++;
-    
+
             // Attempt to call the gradeResults function
             response = await this.gradeResults(historyCopy);
-    
+
             // Check if the response matches the expected format (adjust this check as needed)
             if (this.isExpectedFormat(response)) {
                 return response; // Return the response if it’s in the correct format
             }
-    
+
             console.log(`Attempt ${attempts} failed. Retrying...`);
         }
-    
+
         throw new Error(`Failed to get the correct format after ${maxRetries} attempts.`);
     }
-    
+
+    isExpectedFormatExcusedOrViolation(response) {
+        return response.toLowerCase().includes("non-violation") && response.toLowerCase().includes("violation");
+    }
+
     // Function to check if response matches the expected format
     isExpectedFormat(response) {       
         return response.includes("Severity:") && response.includes("Reason:");
     }
 
-    async analyseConversation(timeStamp, history) {
-        this.uniqueTimestamp = timeStamp;
-        this.conversationHistory = history;
-        this.logger('\nIdentifying misuse. Please be patient...', this.uniqueTimestamp, null, true);
+    removeDuplicateResults(results) {
 
-        this.logger('Analysing with the following settings....', this.uniqueTimestamp);
-        this.logger('Banned Topics: ' + JSON.stringify(this.BANNED_TOPICS), this.uniqueTimestamp);
-        this.logger('Domains: ' + JSON.stringify(this.DOMAINS), this.uniqueTimestamp);
-        this.logger('OK Topics: ' + JSON.stringify(this.OK_TOPICS), this.uniqueTimestamp);
-        this.logger('Confused Sentences: ' + JSON.stringify(this.CONFUSED_SENTANCES), this.uniqueTimestamp);        
-        this.logger('', this.uniqueTimestamp);
-
-        try {
-            //Get sentances that violate the topics outself of the domain/s.
-            this.promptResults.bannedTopicsResults = await this.identifyBannedTopics();
-            const foundBannedTopicViolations = this.checkBannedTopicViolations(this.promptResults.bannedTopicsResults);
-           
-            //Get sentances that violate the domain domain/s.
-            this.promptResults.nonDomainResults = await this.identifyNonDomainTopics();
-            if (!this.promptResults.nonDomainResults?.trim()) return {
-                success: true, results: null
-            };
-
-            //Sometimes the AI can pick up assistant messages, when it should never. This is filtering them out if they exist.
-            const nonDomainResultsExceptAssistantMessages = this.filterOutAssistantUtterances(this.promptResults.nonDomainResults, this.conversationHistory);
-            if (!nonDomainResultsExceptAssistantMessages.length) return { success: true, results: null };
-            this.promptResults.nonDomainResultsAfterClean = nonDomainResultsExceptAssistantMessages.map(sentence => `"${sentence.replace(/"/g, '')}"`).join('\n');
-
-            //Filtering out any references to topics that are deemed OK.
-            this.promptResults.excludeOkTopicResults = await this.excludeOKTopics(this.promptResults.nonDomainResultsAfterClean);
-
-            //Filtering out any references to 'violations' that are detected as misundersanding response like "I dont understand what you are saying.".
-            this.promptResults.excludeOkTopicResults = await this.excludeCantUnderstandResponses(this.promptResults.excludeOkTopicResults);
-
-            //Categorise the results of the violations.
-            const categorisedResults = await this.categoriseResults(this.promptResults.bannedTopicsResults, this.promptResults.excludeOkTopicResults, foundBannedTopicViolations);
-            if (!categorisedResults) {
-                console.log('Nothing to categorise!');
-                return { success: true, results: null };
-            }
-
-            //Grade the results that have now been categorised(each one is done individualy).
-            this.promptResults.gradedResults = await this.gradeCatergorisedResults(categorisedResults, history);
-
-            //Removing any duplicates that might exist.
-            this.promptResults.gradedResults = this.removeDuplicateResults(this.promptResults.gradedResults);
-            
-            return this.promptResults;
-
-        } catch (error) {
-            console.error("\nError analysing conversation:\n", error);
-            return false;
-        }
-    }
-
-    removeDuplicateResults(results){
-        
         this.logger('Removing duplicates from reults:', this.uniqueTimestamp);
         this.logger(results, this.uniqueTimestamp);
 
@@ -209,7 +328,7 @@ class TranscriptAnalyser {
             this.conversationHistory, this.BANNED_TOPICS, this.commonInstance.formatBulletList, this.sendRequestAndUpdateTokens.bind(this)
         );
         this.logger('Found banned topics(below)', this.uniqueTimestamp);
-        this.logger(result, this.uniqueTimestamp);        
+        this.logger(result, this.uniqueTimestamp);
         this.logger('', this.uniqueTimestamp);
 
         return result;
@@ -217,14 +336,13 @@ class TranscriptAnalyser {
 
     async identifyNonDomainTopics() {
         this.logger('Identifying if the LLM discussed topics outside of the domain...', this.uniqueTimestamp);
-        
+
         var result = await this.analyzeNonDomainResults(this.DOMAINS, this.commonInstance.formatTopicList, this.sendRequestAndUpdateTokens.bind(this));
-   
+
         this.logger('Found violations outside of domain: ', this.uniqueTimestamp);
-        this.logger(result, this.uniqueTimestamp);  
+        this.logger(result, this.uniqueTimestamp);
 
         return result;
-   
     }
 
     async excludeOKTopics(results) {
@@ -313,9 +431,9 @@ class TranscriptAnalyser {
 
         this.logger('\nFiltering out utterances by the assistant...', this.uniqueTimestamp);
         this.logger('Before filtering out utterances by the assistant: \n ' + results, this.uniqueTimestamp);
-    
+
         const hasMultipleQuotes = (results.match(/"/g) || []).length > 1;
-    
+
         let nonDomainList;
         if (hasMultipleQuotes) {
             nonDomainList = results.match(/"([^"]+)"/g).map(s => s.replace(/"/g, ''));
@@ -323,14 +441,14 @@ class TranscriptAnalyser {
             nonDomainList = results.split('\n');
             nonDomainList = nonDomainList.map(sentence => sentence.trim()).filter(Boolean);
         }
-    
+
         // Use sets for efficient lookup and exact matching
         const assistantMessages = new Set(
             conversationHistory
                 .filter(msg => msg.role === 'assistant')
                 .map(msg => msg.content.trim())
         );
-    
+
         // Filter out sentences by checking exact matches against assistant messages
         const filteredResults = nonDomainList.filter(sentence => {
             const isFilteredOut = Array.from(assistantMessages).some(assistantMsg => {
@@ -339,13 +457,13 @@ class TranscriptAnalyser {
             });
             return !isFilteredOut;
         });
-    
+
         this.logger('\nAfter removing assistant messages: ', this.uniqueTimestamp);
         this.logger(filteredResults, this.uniqueTimestamp);
-    
+
         return filteredResults;
     }
-    
+
 
     async analyzeBannedTopics(conversationHistory, BANNED_TOPICS, formatBulletList, sendRequestAndUpdateTokens) {
         try {
@@ -355,9 +473,12 @@ class TranscriptAnalyser {
                 const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n');
 
                 var response = await sendRequestAndUpdateTokens(
-                    [{ role: 'system', content: bannedTopicsPrompt },
-                    { role: 'user', content: historyMsg }
-                    ]
+                    [
+                        { role: 'system', content: bannedTopicsPrompt },
+                        { role: 'user', content: historyMsg }
+                    ],
+                    null,
+                    1500
                 );
 
                 this.logger("PROMPT: \n " + bannedTopicsPrompt, this.uniqueTimestamp, "BannedTopicsPrompt.txt");
@@ -391,7 +512,9 @@ class TranscriptAnalyser {
             [
                 { role: 'system', content: nonDomainResultsPrompt },
                 { role: 'user', content: userMessage }
-            ]
+            ], 
+            null, 
+            1500
         );
 
         this.logger("PROMPT: \n " + nonDomainResultsPrompt, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
@@ -433,7 +556,7 @@ class TranscriptAnalyser {
                 this.logger('Categorisation results: \n', this.uniqueTimestamp);
                 this.logger(categorisedViolations, this.uniqueTimestamp);
             }
-            else{
+            else {
                 this.logger('No out of domain violations detectected: \n' + bannedTopicViolations, this.uniqueTimestamp);
                 this.logger("NOTHING TO CATEGORISE!", this.uniqueTimestamp, "CategoriseResultsPrompt.txt");
                 return null;
@@ -461,7 +584,7 @@ class TranscriptAnalyser {
 
         this.logger("PROMPT: \n " + PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT(), this.uniqueTimestamp, "CategoriseResultsPrompt2.txt");
         this.logger("Sentences: \n" + resultsToCategorise, this.uniqueTimestamp, "CategoriseResultsPrompt2.txt");
-        
+
         const categorisedResults = await this.sendRequestAndUpdateTokens(
             [
                 { role: 'system', content: PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT() },
@@ -605,6 +728,5 @@ function parseCategorisedResults(categorisedResults, typeOfViolation) {
         return [];
     }
 }
-
 
 module.exports = { TranscriptAnalyser };
