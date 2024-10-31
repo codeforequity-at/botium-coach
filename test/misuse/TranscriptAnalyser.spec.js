@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
-const TranscriptAnalyser = require('../src/misuse/transcriptAnalyser').TranscriptAnalyser;
+const TranscriptAnalyser = require('../../src/misuse/transcriptAnalyser').TranscriptAnalyser;
 
 describe('TranscriptAnalyser', function () {
 
@@ -69,7 +69,7 @@ describe('TranscriptAnalyser', function () {
     });
 
     it('should send request and update tokens in sendRequestAndUpdateTokens', async function () {
-        const openAIStub = sinon.stub(require('../src/misuse/openaiHelper'), 'sendOpenAIRequest').resolves({
+        const openAIStub = sinon.stub(require('../../src/misuse/openaiHelper'), 'sendOpenAIRequest').resolves({
             result: 'mocked result',
             prompt_tokens: 5,
             completion_tokens: 10
