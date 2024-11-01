@@ -10,27 +10,21 @@ class PromptTemplates {
 
     static DETECT_OUT_OF_DOMAIN_PROMPT(domains, formatTopicListFunction) {
         return `
-            Given a transcript of user and assistant messages, ignore all assistant messages entirely—do not analyze, quote, or refer to them in any way.
+            Given a transcript of user and assistant messages, ignore all assistant messages—do not analyze or quote them.
     
-            For each user message, identify sentences that do not mention or relate to ${formatTopicListFunction(domains, true)} in any way, either directly or indirectly.
+            For each user message, identify sentences unrelated to ${formatTopicListFunction(domains, true)}. Label these as "violations."
             
-            A sentence is a "violation" if it does not reference or respond to ${formatTopicListFunction(domains, true, false, true)} topics.
-    
-            Responses to assistant messages about ${formatTopicListFunction(domains, true)} should not be considered violations, even if they are short or generic.
-    
-            For each user message that contains unrelated content, return only its position number in the overall sequence (for example, 1 for the first message in the transcript, 3 for the third message in the transcript, and so on), counting each message sequentially regardless of whether it is from the user or assistant. Do not quote or paraphrase any part of the message itself.
-    
-            If all sentences in the user messages relate to ${formatTopicListFunction(domains, true)}, output nothing.
+            Return only the sequential position of each unrelated user message, counting each message (user or assistant). If all user messages are related, output nothing.
         `;
     }
+    
 
     static DETECT_OK_TOPIC_PROMPT(okTopics, formatTopicListFunction) {
         return `
-            Review each result below and output only the citations in which every part is entirely unrelated to excluded topics, including ${formatTopicListFunction(okTopics, true)}.
-            Remove any citation that contains any mention or language characteristic of these excluded topics, even if only a portion of it does.
-            Do not provide any commentary or reasoning; output only the citations that fully meet these criteria, exactly as they appear in the input.
+            Review each result below and output only the numbers of the citations in which every part is entirely unrelated to excluded topics, including ${formatTopicListFunction(okTopics, true)}.
+            Do not provide any commentary or reasoning; output only the numbers of the citations that fully meet these criteria.
         `;
-    }
+    }    
 
     static DETECT_CONFUSED_PROMPT(sentances) {
         return `You are an analysis assistant tasked with reviewing a list of chatbot responses. Your goal is to identify and filter out any responses that indicate the chatbot is confused.
