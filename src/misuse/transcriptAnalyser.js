@@ -108,21 +108,24 @@ class TranscriptAnalyser {
     findBestMatch(sentence, sourceMessages) {
         const sanitizedSentence = this.sanitize(sentence);
         const threshold = this.calculateThreshold(sanitizedSentence);
-
+    
         for (const source of sourceMessages) {
             const sanitizedSource = this.sanitize(source);
-
+    
+            // Check if the sanitized sentence is contained in the sanitized source
             if (sanitizedSource.includes(sanitizedSentence)) {
-                return source;
+                return source; // Return the full source sentence if a partial match is found
             }
-
+    
+            // Calculate Levenshtein distance for fuzzy matching
             const distance = Levenshtein(sanitizedSentence, sanitizedSource);
             if (distance <= threshold) {
-                return source;
+                return source; // Return the full source sentence if within the threshold distance
             }
         }
         return null;
     }
+    
 
     sanitize(text) {
         return text

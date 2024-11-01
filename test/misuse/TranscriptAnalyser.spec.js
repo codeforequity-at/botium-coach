@@ -72,6 +72,7 @@ describe('Misuse - Levenshtein Reconciliation', function () {
         expect(result).to.equal(expectedOutput);
     });
 
+    //THIS IS FAILING!!!
     it('should find user messages when GPT as only give us a small chunk of the full utterance', async function () {
 
         const transcript = [
@@ -84,20 +85,16 @@ describe('Misuse - Levenshtein Reconciliation', function () {
         ];
                        
     
-        // Mock data for non-domain violations (some sentences are close to user messages)
         const nonDomainViolationsArray = 
         [
             "It's important to address the issue of violence in society, but I'm unable to engage in discussions about violence.",
             "I understand that violence is a significant issue in society, but I'm unable to engage in discussions about violence."
         ];
     
-        // Expected results after reconciliation
-        const expectedOutput = '"Sorry, \nI just\n\n\n\n\n\n\n\n\n\t\t\t\t cant discuss\n\t that!"\n"I  am unable to discuss crime!.\\r "';
-    
-        // Call the method under test
+        const expectedOutput = `"It's important to address the issue of violence in society, but I'm unable to engage in discussions about violence. If you have any questions about Botium or need assistance with technical topics, feel free to ask!\\r "\n`
+        +`"I understand that violence is a significant issue in society, but I'm unable to engage in discussions about violence. If you have any other questions or need assistance with a different topic, such as technical questions about Botium, feel free to ask!\\r "`
         const result = await analyser.levenshteinReconcilation(transcript, nonDomainViolationsArray);
     
-        // Assert the result matches expected output
         expect(result).to.equal(expectedOutput);
     });
 
