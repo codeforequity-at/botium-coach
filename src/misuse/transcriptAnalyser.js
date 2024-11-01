@@ -44,50 +44,57 @@ class TranscriptAnalyser {
 
         try {
             //Step 1. Get sentances that violate the topics outself of the domain/s.
-
             var bannedTopicViolationsAsArray = await this.identifyBannedTopics();
-            this.promptResults.bannedTopicsResults = bannedTopicViolationsAsArray.join('\n')
-            const foundBannedTopicViolations = this.checkBannedTopicViolations(this.promptResults.bannedTopicsResults);
-            this.logResults('Step 1. Banned topic violations', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
-            this.promptResults.nonDomainResults = await this.identifyNonDomainTopics()  
-            if (this.promptResults.nonDomainResults.leng == 0) return {
+            var bannedTopicsResults = bannedTopicViolationsAsArray.join('\n')
+            const foundBannedTopicViolations = this.checkBannedTopicViolations(bannedTopicsResults);
+            this.logResults('Step 1. Banned topic violations', bannedTopicsResults, "ResultBreakdown.txt");
+            
+            //Step 2. Non domain results
+            var nonDomainResults = await this.identifyNonDomainTopics()  
+            if (nonDomainResults.leng == 0) return {
                 success: true, results: null
             };
-            this.logResults('Step 1. Out of domain violations', this.promptResults.nonDomainResults, "ResultBreakdown.txt");
+            this.logResults('Step 2. Out of domain violations', nonDomainResults, "ResultBreakdown.txt");
 
-            //Step 2. Filtering out any references to topics that are deemed OK.
+            //Step 3. Filtering out any references to topics that are deemed OK.
             if (this.OK_TOPICS.length > 0) {
-            var violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(this.promptResults.nonDomainResults);
-            this.promptResults.excludeOkTopicResults = violationsExceptTopicsThatAreOkArray.join('\n');
-            this.logResults('Step 2. After filtering out OK topics', this.promptResults.excludeOkTopicResults, "ResultBreakdown.txt");
+            var violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainResults);
+            this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, "ResultBreakdown.txt");
             }
             else{
-                this.promptResults.excludeOkTopicResults = this.promptResults.nonDomainResults;
+               violationsExceptTopicsThatAreOkArray = nonDomainResults;
             }
             
-            // When categorising we cant send multiple large sentances to GPT, it gets confused. 
-            // So we will have to do them individually if that is the case.
+            //Here we need to
+            // Number each sentance that gets sent to GPT.
+            //Ask for GPT to reference the numbers not the sentances.
+            //Retrieve the original sentances using the numbers.
 
-            //Step 3. Categorise the results of the violations.
+            //Step 4. Categorise the results of the violations.
             const categorisedResults = await this.categoriseResults(bannedTopicViolationsAsArray.join('\n -------------- \n '), 
             violationsExceptTopicsThatAreOkArray.join('\n -------------- \n '), 
             foundBannedTopicViolations);
+
             if (!categorisedResults) {
                 return { success: true, results: null };
             }
-            this.logResults('Step 3. After categorising the results', categorisedResults, "ResultBreakdown.txt");
+            this.logResults('Step 4. After categorising the results', categorisedResults, "ResultBreakdown.txt");
 
-            //Step 4. Grade the results that have now been categorised(each one is done individualy).
-            this.promptResults.gradedResults = await this.gradeCatergorisedResults(categorisedResults, history);
-            this.logResults('Step 4. After grading the categorised results', this.promptResults.gradedResults, "ResultBreakdown.txt");
+            //Step 5. Grade the results that have now been categorised(each one is done individualy).
+            var gradedResults = await this.gradeCatergorisedResults(categorisedResults, history);
+            this.logResults('Step 5. After grading the categorised results', gradedResults, "ResultBreakdown.txt");
 
-            //Step 5. Removing any duplicates that might exist.
-            this.promptResults.gradedResults = this.removeDuplicateResults(this.promptResults.gradedResults);
-            this.logResults('Step 5. After removing any duplicates', this.promptResults.gradedResults, "ResultBreakdown.txt");
+            console.log('gradedResults', gradedResults)
 
-             //Step 6. Filter out severities of N/A
-             this.promptResults.gradedResults = this.removeNonApplicableSeverity(this.promptResults.gradedResults);
-             this.logResults('Step 6. After removing results with severity of N/A', this.promptResults.gradedResults, "ResultBreakdown.txt");
+            //Step 6. Removing any duplicates that might exist.
+            gradedResults = this.removeDuplicateResults(gradedResults);
+            this.logResults('Step 6. After removing any duplicates', gradedResults, "ResultBreakdown.txt");
+
+             //Step 7. Filter out severities of N/A
+             gradedResults = this.removeNonApplicableSeverity(gradedResults);
+             this.logResults('Step 7. After removing results with severity of N/A', gradedResults, "ResultBreakdown.txt");
+
+             this.promptResults.gradedResults = gradedResults;
 
             return this.promptResults;
 
