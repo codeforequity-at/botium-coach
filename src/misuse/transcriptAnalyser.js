@@ -113,10 +113,15 @@ class TranscriptAnalyser {
             const sanitizedSource = this.sanitize(source);
     
             // Check if the sanitized sentence is contained in the sanitized source
-            if (sanitizedSource.includes(sanitizedSentence)) {
-                return source; // Return the full source sentence if a partial match is found
-            }
+            //if (sanitizedSource.includes(sanitizedSentence)) {
+              //  return source; // Return the full source sentence if a partial match is found
+            //}
     
+             // Use the levenshteinInclude function to check for a close substring match
+            if (this.levenshteinInclude(sanitizedSentence, sanitizedSource, threshold)) {
+                return source; // Return the full source sentence if a close substring match is found
+            }
+
             // Calculate Levenshtein distance for fuzzy matching
             const distance = Levenshtein(sanitizedSentence, sanitizedSource);
             if (distance <= threshold) {
@@ -124,6 +129,27 @@ class TranscriptAnalyser {
             }
         }
         return null;
+    }
+    
+    levenshteinInclude(target, source, threshold) {
+        const sanitizedTarget = this.sanitize(target);
+        const sanitizedSource = this.sanitize(source);
+    
+        // Use a sliding window of the target's length to get substrings of the source
+        const targetLength = sanitizedTarget.length;
+    
+        for (let i = 0; i <= sanitizedSource.length - targetLength; i++) {
+            const substring = sanitizedSource.substring(i, i + targetLength);
+            
+            // Calculate the Levenshtein distance between target and current substring
+            const distance = Levenshtein(sanitizedTarget, substring);
+            
+            if (distance <= threshold) {
+                return true; // Return true if any substring is within the threshold
+            }
+        }
+    
+        return false; // No substring match within the threshold found
     }
     
 
