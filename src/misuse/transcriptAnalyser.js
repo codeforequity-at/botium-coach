@@ -51,7 +51,7 @@ class TranscriptAnalyser {
             if(foundBannedTopicViolations){
                 //Step 1B. Ensure violations are exactly correct and only belong to user messages.
                 var bannedTopicViolations = this.gpt4ResponseToArray(this.promptResults.bannedTopicsResults);
-                this.promptResults.bannedTopicsResults = await this.verifyUserMessages(this.conversationHistory, bannedTopicViolations);
+                this.promptResults.bannedTopicsResults = await this.levenshteinReconcilation(this.conversationHistory, bannedTopicViolations);
                 this.logResults('Step 1A. Banned topic violations after Levenshtein reconciliation.', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
             }
 
@@ -65,7 +65,7 @@ class TranscriptAnalyser {
             if (this.doesResponseHaveSentances(this.promptResults.nonDomainResults)) {
                 //Step 2B. Ensure violations are exactly correct and only belong to user messages.
                 var nonDomainViolations = this.gpt4ResponseToArray(this.promptResults.nonDomainResults);
-                this.promptResults.nonDomainResults = await this.verifyUserMessages(this.conversationHistory, nonDomainViolations);
+                this.promptResults.nonDomainResults = await this.levenshteinReconcilation(this.conversationHistory, nonDomainViolations);
                 this.logResults('Step 2B. Out of domain violations after Levenshtein reconciliation.', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
             }
   
@@ -104,46 +104,53 @@ class TranscriptAnalyser {
          return input.split("\n").map(sentence => sentence.replace(/"/g, ''));
     }
 
-   
+    // Function to find the best match within any part of a given source message
+    findBestMatch(sentence, sourceMessages) {
+        const sanitizedSentence = this.sanitize(sentence);
+        const threshold = this.calculateThreshold(sanitizedSentence);
 
-    async verifyUserMessages(transcript, nonDomainViolations) {
+        for (const source of sourceMessages) {
+            const sanitizedSource = this.sanitize(source);
+
+            if (sanitizedSource.includes(sanitizedSentence)) {
+                return source;
+            }
+
+            const distance = Levenshtein(sanitizedSentence, sanitizedSource);
+            if (distance <= threshold) {
+                return source;
+            }
+        }
+        return null;
+    }
+
+    sanitize(text) {
+        return text
+            .replace(/\s+/g, ' ')                   // Normalize whitespace
+            //.replace(/[.,!?;:"'(){}[\]<>]/g, '')  // Remove punctuation and brackets
+            .replace(/\n/g, '')                     // Remove newlines
+            .toLowerCase();                         // Convert to lowercase
+    }
+
+    // Function to dynamically calculate threshold based on sentence length
+    calculateThreshold(sentence) {
+        const length = sentence.length;
+        const percentage = 0.1; // Allow 10% of the sentence length as the threshold
+        return Math.max(1, Math.floor(length * percentage)); // Ensure at least a threshold of 1
+    }
+
+    async levenshteinReconcilation(transcript, nonDomainViolationsArray) {
         // Extract user messages only from the transcript
         const userMessagesOnly = transcript
             .filter(entry => entry.role === 'user')
             .map(entry => entry.content);
-    
-        // Function to dynamically calculate threshold based on sentence length
-        function calculateThreshold(sentence) {
-            const length = sentence.length;
-            const percentage = 0.1; // Allow 10% of the sentence length as the threshold
-            return Math.max(1, Math.floor(length * percentage)); // Ensure at least a threshold of 1
-        }
-    
-        // Function to find the best match within any part of a given source message
-        function findBestMatch(sentence, sourceMessages) {
-            const threshold = calculateThreshold(sentence);
-        
-            for (const source of sourceMessages) {
-                // Step 1: Check if sentence is a substring of source
-                if (source.includes(sentence)) {
-                    return source; // Exact or near-exact match found as a substring
-                }
-        
-                // Step 2: Use Levenshtein distance for near matches
-                const distance = Levenshtein(sentence, source);
-                if (distance <= threshold) {
-                    return source; // Return the full user message if within Levenshtein threshold
-                }
-            }
-            return null;
-        }
-    
+       
         // Verify each quoted sentence
-        const verifiedSentences = nonDomainViolations.map(sentence => {
-            const match = findBestMatch(sentence, userMessagesOnly);
+        const verifiedSentences = nonDomainViolationsArray.map(sentence => {
+            const match = this.findBestMatch(sentence, userMessagesOnly);
             return match ? `"${match}"` : null; // Return the exact source match or null if no close match is found
         }).filter(Boolean); // Remove any null entries
-    
+
         // Return the verified sentences as a joined string
         return verifiedSentences.join("\n");
     }
@@ -487,6 +494,8 @@ class TranscriptAnalyser {
             null, 
             1500
         );
+
+        console.log("-> " + result + "<-")
 
         this.logger("PROMPT: \n " + nonDomainResultsPrompt, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
         this.logger(userMessage, this.uniqueTimestamp, "OutOfDomainPrompt.txt");

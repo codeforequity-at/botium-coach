@@ -12,17 +12,19 @@ class PromptTemplates {
         return `
             Given a transcript, ignore all assistant messages entirely—do not analyze, quote, or refer to them in any way.
     
-            For each user message, identify any sentence that does not mention or relate to ${formatTopicListFunction(domains, true)} in any way, directly or indirectly.
+            For each user message, identify sentences that do not mention or relate to ${formatTopicListFunction(domains, true)} in any way, either directly or indirectly.
+            
+            A sentence is a "violation" if it does not reference or respond to ${formatTopicListFunction(domains, true, false, true)} topics.
     
-            A sentence is a violation if it does not reference or respond to ${formatTopicListFunction(domains, true, false, true)} topics.
+            Responses to assistant messages about ${formatTopicListFunction(domains, true)} should not be considered violations, even if they are short or generic.
     
-            Responses to assistant messages about ${formatTopicListFunction(domains, true)} should not be considered violations, even if they are short or seem generic.
+            For each detected unrelated sentence, quote it exactly as it appears in the user messages on a new line. Do not modify, rephrase, or summarize any part of the sentence.
     
-            Quote each violation exactly as it appears in the user messages, unaltered and on a new line. Do not modify, rephrase, or summarize any part of the sentence. Ignore all sentences related to ${formatTopicListFunction(domains, true)} or responding to ${formatTopicListFunction(domains, true)} topics.
+            If all sentences relate to ${formatTopicListFunction(domains, true)}, output "No unrelated content detected."
     
-            No commentary. Only output the unrelated sentences from the user's messages only, and ensure they are quoted exactly as found.
         `;
     }
+    
     
 
     static DETECT_OK_TOPIC_PROMPT(okTopics, formatTopicListFunction) {
