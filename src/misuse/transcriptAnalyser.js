@@ -66,7 +66,7 @@ class TranscriptAnalyser {
                 //Step 2B. Ensure violations are exactly correct and only belong to user messages.
                 var nonDomainViolations = this.gpt4ResponseToArray(this.promptResults.nonDomainResults);
                 this.promptResults.nonDomainResults = await this.levenshteinReconcilation(this.conversationHistory, nonDomainViolations);
-                this.logResults('Step 2B. Out of domain violations after Levenshtein reconciliation.', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
+                this.logResults('Step 2B. "Out of domain" violations after Levenshtein reconciliation.', this.promptResults.nonDomainResults, "ResultBreakdown.txt");
             }
   
             //Step 3. Filtering out any references to topics that are deemed OK.
@@ -111,12 +111,12 @@ class TranscriptAnalyser {
     
         for (const source of sourceMessages) {
             const sanitizedSource = this.sanitize(source);
-    
-            // Check if the sanitized sentence is contained in the sanitized source
-            //if (sanitizedSource.includes(sanitizedSentence)) {
-              //  return source; // Return the full source sentence if a partial match is found
-            //}
-    
+            
+            console.log('\n is this:')
+            console.log(sanitizedSentence)
+            console.log('found within this:')
+            console.log(sanitizedSource)
+
              // Use the levenshteinInclude function to check for a close substring match
             if (this.levenshteinInclude(sanitizedSentence, sanitizedSource, threshold)) {
                 return source; // Return the full source sentence if a close substring match is found
@@ -132,34 +132,46 @@ class TranscriptAnalyser {
     }
     
     levenshteinInclude(target, source, threshold) {
-        const sanitizedTarget = this.sanitize(target);
-        const sanitizedSource = this.sanitize(source);
+        const sanitizedTarget = this.sanitize(target).replace(/^"+|"+$/g, '').trim();
+        const sanitizedSource = this.sanitize(source).replace(/^"+|"+$/g, '').trim();
     
-        // Use a sliding window of the target's length to get substrings of the source
+        // Early return if exact match exists
+        if (sanitizedSource.includes(sanitizedTarget)) {
+            console.log('yes 1')
+            return true;
+        }
+        else{
+            console.log('Not an exact match include');
+        }
+    
         const targetLength = sanitizedTarget.length;
     
         for (let i = 0; i <= sanitizedSource.length - targetLength; i++) {
             const substring = sanitizedSource.substring(i, i + targetLength);
-            
-            // Calculate the Levenshtein distance between target and current substring
+        
             const distance = Levenshtein(sanitizedTarget, substring);
-            
+    
+            //console.log('distance', distance)
+
             if (distance <= threshold) {
-                return true; // Return true if any substring is within the threshold
+                console.log('yes 2')
+                return true;
             }
         }
     
-        return false; // No substring match within the threshold found
+        console.log('no')
+        return false;
     }
-    
 
     sanitize(text) {
         return text
-            .replace(/\s+/g, ' ')                   // Normalize whitespace
-            //.replace(/[.,!?;:"'(){}[\]<>]/g, '')  // Remove punctuation and brackets
-            .replace(/\n/g, '')                     // Remove newlines
-            .toLowerCase();                         // Convert to lowercase
-    }
+            .trim()                                    // Remove leading and trailing whitespace
+            .replace(/^"+|"+$/g, '')                   // Remove leading and trailing double quotes
+            .replace(/\s+/g, ' ')                      // Normalize whitespace
+            .replace(/[.,!?;:"'(){}[\]<>]/g, '')       // Optionally, remove punctuation
+            .replace(/\n/g, '')                        // Remove newlines
+            .toLowerCase();                            // Convert to lowercase
+    }    
 
     // Function to dynamically calculate threshold based on sentence length
     calculateThreshold(sentence) {
@@ -176,6 +188,11 @@ class TranscriptAnalyser {
        
         // Verify each quoted sentence
         const verifiedSentences = nonDomainViolationsArray.map(sentence => {
+
+            if (sentence.length > 200) {
+                sentence = sentence.substring(0, 200);
+            }
+
             const match = this.findBestMatch(sentence, userMessagesOnly);
             return match ? `"${match}"` : null; // Return the exact source match or null if no close match is found
         }).filter(Boolean); // Remove any null entries

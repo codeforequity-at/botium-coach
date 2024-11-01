@@ -18,18 +18,18 @@ class PromptTemplates {
     
             Responses to assistant messages about ${formatTopicListFunction(domains, true)} should not be considered violations, even if they are short or generic.
     
-            For each detected unrelated sentence, quote it exactly as it appears in the user messages on a new line. Do not modify, rephrase, or summarize any part of the sentence.
+            For each detected unrelated user message, quote the entire message exactly as it appears. Do not break the message into multiple quotes; if multiple unrelated sentences exist in a single user message, return it as a single block of quoted text. Do not modify, rephrase, or summarize any part of the message.
     
             If all sentences relate to ${formatTopicListFunction(domains, true)}, output "No unrelated content detected."
-    
         `;
     }
+    
     
     
 
     static DETECT_OK_TOPIC_PROMPT(okTopics, formatTopicListFunction) {
         return `
-            Review each result below and output only the citations that do not relate to excluded topics, including ${formatTopicListFunction(okTopics, true)}, or similar. Remove any citation mentioning or containing language characteristic of excluded topics.
+            Review each result below and output only the citations that do not relate to excluded topics, including ${formatTopicListFunction(okTopics, true)}. Remove any citation mentioning or containing language characteristic of excluded topics.
     
             Do not output any commentary or reasoning; provide only the citations that are entirely unrelated to excluded topics, exactly as they appear in the input.
         `;
