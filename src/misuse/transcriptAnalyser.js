@@ -48,12 +48,14 @@ class TranscriptAnalyser {
             const foundBannedTopicViolations = this.checkBannedTopicViolations(this.promptResults.bannedTopicsResults);
             this.logResults('Step 1. Banned topic violations', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
 
+            /*
             if(foundBannedTopicViolations){
                 //Step 1B. Ensure violations are exactly correct and only belong to user messages.
                 var bannedTopicViolations = this.gpt4ResponseToArray(this.promptResults.bannedTopicsResults);
                 this.promptResults.bannedTopicsResults = await this.levenshteinReconcilation(this.conversationHistory, bannedTopicViolations);
                 this.logResults('Step 1A. Banned topic violations after Levenshtein reconciliation.', this.promptResults.bannedTopicsResults, "ResultBreakdown.txt");
             }
+                */
 
             //Step 2A. Get sentances that violate the domain domain/s.
             this.promptResults.nonDomainResults = await this.identifyNonDomainTopics();
@@ -62,12 +64,14 @@ class TranscriptAnalyser {
             };
             this.logResults('Step 2. Out of domain violations', this.promptResults.nonDomainResults, "ResultBreakdown.txt");
 
+             /*
             if (this.doesResponseHaveSentances(this.promptResults.nonDomainResults)) {
                 //Step 2B. Ensure violations are exactly correct and only belong to user messages.
                 var nonDomainViolations = this.gpt4ResponseToArray(this.promptResults.nonDomainResults);
                 this.promptResults.nonDomainResults = await this.levenshteinReconcilation(this.conversationHistory, nonDomainViolations);
                 this.logResults('Step 2B. "Out of domain" violations after Levenshtein reconciliation.', this.promptResults.nonDomainResults, "ResultBreakdown.txt");
             }
+            */
   
             //Step 3. Filtering out any references to topics that are deemed OK.
             this.promptResults.excludeOkTopicResults = await this.excludeOKTopics(this.promptResults.nonDomainResults);
@@ -496,7 +500,7 @@ class TranscriptAnalyser {
 
                 const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n');
 
-                var response = await sendRequestAndUpdateTokens(
+                var violationIndicies = await sendRequestAndUpdateTokens(
                     [
                         { role: 'system', content: bannedTopicsPrompt },
                         { role: 'user', content: historyMsg }
@@ -505,11 +509,17 @@ class TranscriptAnalyser {
                     1500
                 );
 
+                const violationIndices = this.parseViolationIndices(violationIndicies);
+
+                var results = this.fetchViolatingMessages(this.conversationHistory, violationIndices);
+
+                var final = results.join('\n');
+
                 this.logger("PROMPT: \n " + bannedTopicsPrompt, this.uniqueTimestamp, "BannedTopicsPrompt.txt");
                 this.logger(historyMsg, this.uniqueTimestamp, "BannedTopicsPrompt.txt");
-                this.logger("\n \nGPT-4 RESPONSE: \n" + response, this.uniqueTimestamp, "BannedTopicsPrompt.txt");
+                this.logger("\n \nGPT-4 RESPONSE: \n" + final, this.uniqueTimestamp, "BannedTopicsPrompt.txt");
 
-                return response;
+                return final;
             }
             return null;
         } catch (error) {
@@ -519,35 +529,54 @@ class TranscriptAnalyser {
         }
     }
 
+    fetchViolatingMessages(transcript, violationIndices) {
+        return violationIndices.map(index => {
+            // Subtract 1 from index to match the array's 0-based indexing
+            const message = transcript[index - 1];
+            
+            // Ensure it’s a user message
+            if (message && message.role === "user") {
+                return message.content;
+            }
+        });
+    }
+
+    parseViolationIndices(violationString) {
+        // Split the string by commas, trim any whitespace, and convert each element to an integer
+        return violationString.split(',').map(index => parseInt(index.trim(), 10));
+    }
+
     async analyzeNonDomainResults(DOMAINS, formatTopicList, sendRequestAndUpdateTokens) {
 
         const nonDomainResultsPrompt = PromptTemplates.DETECT_OUT_OF_DOMAIN_PROMPT(DOMAINS, formatTopicList);
 
         var historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`);
 
-        if (!historyAsString || historyAsString.length === 0) {
-            this.logger('There was an error. The conversation was empty.', this.uniqueTimestamp);
-            throw new Error('The conversation history is empty.');
-        }
+        const transcriptAsText = 'Transcript:\n' + historyAsString.join('\n')
 
-        const userMessage = 'Transcript:\n' + historyAsString.join('\n')
-
-        var result = await sendRequestAndUpdateTokens(
+        var violationIndicies = await sendRequestAndUpdateTokens(
             [
                 { role: 'system', content: nonDomainResultsPrompt },
-                { role: 'user', content: userMessage }
+                { role: 'user', content: transcriptAsText }
             ], 
             null, 
             1500
         );
 
-        console.log("-> " + result + "<-")
+        const violationIndices = this.parseViolationIndices(violationIndicies);
+
+        var results = this.fetchViolatingMessages(this.conversationHistory, violationIndices);
+
+        var final = results.join('\n');
 
         this.logger("PROMPT: \n " + nonDomainResultsPrompt, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
-        this.logger(userMessage, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
-        this.logger("\n \nGPT-4 RESPONSE: \n" + result, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
+        this.logger(transcriptAsText, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
+        this.logger("\n \nGPT-4 RESPONSE: \n" + violationIndicies, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
+        this.logger("\n" + final, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
 
-        return result;
+        console.log('out of domain: ' + final);
+
+        return final;
     }
 
     async categoriseResults(bannedTopicViolations, outOfDomainViolations, foundBannedTopicViolations) {

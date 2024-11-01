@@ -10,7 +10,7 @@ class PromptTemplates {
 
     static DETECT_OUT_OF_DOMAIN_PROMPT(domains, formatTopicListFunction) {
         return `
-            Given a transcript, ignore all assistant messages entirely—do not analyze, quote, or refer to them in any way.
+            Given a transcript of user and assistant messages, ignore all assistant messages entirely—do not analyze, quote, or refer to them in any way.
     
             For each user message, identify sentences that do not mention or relate to ${formatTopicListFunction(domains, true)} in any way, either directly or indirectly.
             
@@ -18,23 +18,19 @@ class PromptTemplates {
     
             Responses to assistant messages about ${formatTopicListFunction(domains, true)} should not be considered violations, even if they are short or generic.
     
-            For each detected unrelated user message, quote the entire message exactly as it appears. Do not break the message into multiple quotes; if multiple unrelated sentences exist in a single user message, return it as a single block of quoted text. Do not modify, rephrase, or summarize any part of the message.
+            For each user message that contains unrelated content, return only its position number in the overall sequence (for example, 1 for the first message in the transcript, 3 for the third message in the transcript, and so on), counting each message sequentially regardless of whether it is from the user or assistant. Do not quote or paraphrase any part of the message itself.
     
-            If all sentences relate to ${formatTopicListFunction(domains, true)}, output "No unrelated content detected."
+            If all sentences in the user messages relate to ${formatTopicListFunction(domains, true)}, output nothing.
         `;
     }
-    
-    
-    
 
     static DETECT_OK_TOPIC_PROMPT(okTopics, formatTopicListFunction) {
         return `
-            Review each result below and output only the citations that do not relate to excluded topics, including ${formatTopicListFunction(okTopics, true)}. Remove any citation mentioning or containing language characteristic of excluded topics.
-    
-            Do not output any commentary or reasoning; provide only the citations that are entirely unrelated to excluded topics, exactly as they appear in the input.
+            Review each result below and output only the citations in which every part is entirely unrelated to excluded topics, including ${formatTopicListFunction(okTopics, true)}.
+            Remove any citation that contains any mention or language characteristic of these excluded topics, even if only a portion of it does.
+            Do not provide any commentary or reasoning; output only the citations that fully meet these criteria, exactly as they appear in the input.
         `;
     }
-    
 
     static DETECT_CONFUSED_PROMPT(sentances) {
         return `You are an analysis assistant tasked with reviewing a list of chatbot responses. Your goal is to identify and filter out any responses that indicate the chatbot is confused.
@@ -124,21 +120,21 @@ class PromptTemplates {
     ---
     
     Do not introduce topics or commentary outside of the banned topic assessment.`;
-    }
-    
+    }   
 
 
     static BANNED_TOPICS_PROMPT(bannedTopics, formatBulletList) {
         return `
-        Given a transcript and a list of banned topics, identify every sentence in user messages that mentions any banned topic from the list: ${formatBulletList(bannedTopics)}.
-
-        A sentence is a violation if it directly or indirectly refers to any banned topic. Strictly match sentences that contain or allude to banned topics, even if briefly.
-
-        Output each violating sentence in quotation marks, unaltered, on a new line. No commentary or sentence modification.
-
-        If no violating sentences are found, leave the output blank.
+            Given a transcript and a list of banned topics, identify each user message that contains a sentence referring to any banned topic from the list: ${formatBulletList(bannedTopics)}.
+    
+            A user message is a violation if it contains any sentence that directly or indirectly refers to a banned topic. Strictly match messages that contain or allude to banned topics, even if briefly.
+    
+            For each violating user message, return only its position number in the overall sequence (for example, 1 for the first message in the transcript, 3 for the third message in the transcript, and so on), counting each message sequentially regardless of whether it is from the user or assistant. 
+            Do not quote or paraphrase any part of the message itself.
+    
+            If no violating messages are found, leave the output blank.
         `;
-    }
+    }    
 
     //TESTING SCRIPTS
 
