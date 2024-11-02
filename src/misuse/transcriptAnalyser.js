@@ -46,7 +46,6 @@ class TranscriptAnalyser {
             //Step 1. Get sentances that violate the topics outself of the domain/s.
             var bannedTopicViolationsAsArray = await this.identifyBannedTopics();
             var bannedTopicsResults = bannedTopicViolationsAsArray.join('\n')
-            const foundBannedTopicViolations = this.checkBannedTopicViolations(bannedTopicsResults);
             this.logResults('Step 1. Banned topic violations', bannedTopicsResults, "ResultBreakdown.txt");
             
             //Step 2. Non domain results
@@ -64,27 +63,17 @@ class TranscriptAnalyser {
             else{
                violationsExceptTopicsThatAreOkArray = nonDomainResults;
             }
+        
+            //These are lettered, A B C D E etc.
+            var numberedViolations = [...bannedTopicViolationsAsArray.map(statement => ({statement, type: 'banned'})), ...violationsExceptTopicsThatAreOkArray.map(statement => ({statement, type: 'out of domain'}))];
             
-            //Here we need to
-            // Number each sentance that gets sent to GPT.
-            //Ask for GPT to reference the numbers not the sentances.
-            //Retrieve the original sentances using the numbers.
-
-            //Step 4. Categorise the results of the violations.
-            const categorisedResults = await this.categoriseResults(bannedTopicViolationsAsArray.join('\n -------------- \n '), 
-            violationsExceptTopicsThatAreOkArray.join('\n -------------- \n '), 
-            foundBannedTopicViolations);
-
-            if (!categorisedResults) {
-                return { success: true, results: null };
-            }
-            this.logResults('Step 4. After categorising the results', categorisedResults, "ResultBreakdown.txt");
+//console.log('numberedViolations', numberedViolations)
 
             //Step 5. Grade the results that have now been categorised(each one is done individualy).
-            var gradedResults = await this.gradeCatergorisedResults(categorisedResults, history);
+            var gradedResults = await this.gradeCatergorisedResults(numberedViolations, history);
             this.logResults('Step 5. After grading the categorised results', gradedResults, "ResultBreakdown.txt");
 
-            console.log('gradedResults', gradedResults)
+            console.log('gradedResults: ', gradedResults)
 
             //Step 6. Removing any duplicates that might exist.
             gradedResults = this.removeDuplicateResults(gradedResults);
@@ -239,6 +228,8 @@ class TranscriptAnalyser {
 
     async gradeVolation(violation, history) {
 
+        console.log('grading this',violation)
+
         var domain = this.commonInstance.formatTopicList(this.DOMAINS, true)
         var bannedTopics = this.commonInstance.formatTopicList(this.BANNED_TOPICS, true)
 
@@ -246,7 +237,7 @@ class TranscriptAnalyser {
 
         // Find the index of the violation in the history
         const violationIndex = historyCopy.findIndex(
-            item => item.content.replace(/\s+|\n|\r/g, ' ').trim() === violation.statement.replace(/\s+|\n|\r/g, ' ').trim()
+            item => item && item.content && violation && violation.statement && item.content.replace(/\s+|\n|\r/g, ' ').trim() === violation.statement.replace(/\s+|\n|\r/g, ' ').trim()
         );
 
         if (violationIndex === -1) {
@@ -281,17 +272,17 @@ class TranscriptAnalyser {
 
         var response = await this.callGradeResultsWithRetries.call(this, priorMessages);
 
-        const responseObject = { category: violation.category };
+        const responseObject = { };
         response.split('\n').forEach(line => {
             const [key, ...value] = line.split(': ');
             if (key && value.length) {
                 const formattedKey = key.trim().toLowerCase();
                 const formattedValue = value.join(': ').trim().replace(/^"|"$/g, '');
-                if (formattedKey !== 'category') {
-                    responseObject[formattedKey] = formattedValue;
-                }
+                responseObject[formattedKey] = formattedValue;
             }
         });
+
+console.log('----> ', responseObject)
 
         return responseObject
     }
@@ -365,17 +356,23 @@ class TranscriptAnalyser {
         return finalResults;
     }
 
-    async gradeCatergorisedResults(categorisedResults, history) {
+    async gradeCatergorisedResults(labeledViolations, history) {
+
+        console.log('1. labeledViolations', labeledViolations)
 
         this.logger('Grading results: \n', this.uniqueTimestamp);
-        this.logger(categorisedResults, this.uniqueTimestamp);
+        this.logger(labeledViolations, this.uniqueTimestamp);
 
         const gradedResultsList = [];
 
-        for (const result of categorisedResults) {
+        for (const result of labeledViolations) {
             const gradedResult = await this.gradeVolation(result, history);
-            gradedResultsList.push(gradedResult);
+            if(gradedResult != null){
+                gradedResultsList.push(gradedResult);
+            }
         }
+
+        console.log('2. gradedResultsList', gradedResultsList)
 
         this.logger('Graded results:', this.uniqueTimestamp);
         this.logger(gradedResultsList, this.uniqueTimestamp);
@@ -539,7 +536,7 @@ class TranscriptAnalyser {
             
             // Ensure it’s a user message and its not empty.
             if (message && message.role === "user" && message.content) {
-                return message.content;
+                return message.content + "\n";
             }
         });
     }
@@ -595,6 +592,9 @@ class TranscriptAnalyser {
 
             this.logger('There was a banned topic violation: \n' + bannedTopicViolations, this.uniqueTimestamp);
             this.logger('Out of domain violations: \n' + outOfDomainViolations, this.uniqueTimestamp);
+
+            console.log('bannedTopicViolations', bannedTopicViolations);
+            console.log('outOfDomainViolations', outOfDomainViolations);
 
             categorisedViolations = [
                 ...(bannedTopicViolations && bannedTopicViolations.trim() ? await this.getBannedResults(bannedTopicViolations, 'banned') : []),
@@ -686,22 +686,11 @@ class TranscriptAnalyser {
 
         // Create an array to hold the parsed objects
         const parsedData = entries.map(entry => {
-            const lines = entry.split('\n');
+            // Since each entry is a single line, we can directly process it
+            const statement = entry.replace(/"/g, ''); // Remove quotes for safety
 
-            // Check if both lines are available
-            if (lines.length < 2) {
-                console.error('Error parsing entry:', entry);
-                return null;  // Return null or handle it as per your requirement
-            }
-
-            const [statementLine, categoryLine] = lines;
-
-            // Extract the statement and category values, add extra checks for safety
-            const statement = statementLine.split(': ')[1]?.replace(/"/g, '') || 'Unknown';
-            const category = categoryLine.split(': ')[1] || 'Unknown';
-
-            return { statement, category };
-        }).filter(item => item !== null); // Filter out any null entries
+            return { statement };
+        });
 
         return parsedData;
     }
@@ -762,6 +751,8 @@ class TranscriptAnalyser {
             if ((bannedTopicsResults.match(/"/g) || []).length >= 2) {
                 return true;
             }
+
+            console.log('parsing these banned topics.', bannedTopicsResults);
 
             var parsedBannedTopics = null;
             try {
