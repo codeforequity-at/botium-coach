@@ -4,7 +4,7 @@ const { TranscriptAnalyser } = require('./transcriptAnalyser.js');
 const Common = require('./common.js');
 
 const MAX_HISTORY_TURNS = process.env.MAX_CONVERSATION_TURNS
-const MAX_CONVERSATION_TURNS = process.env.MAX_CONVERSATION_TURNS
+const MAX_CONVERSATION_CHARACTER_COUNT = process.env.MAX_CONVERSATION_CHARACTER_COUNT;
 const PromptTemplates = require('./prompts.js');
 
 class ConversationTracker {
@@ -107,9 +107,37 @@ class ConversationTracker {
         this.logger("PROMPT: \n " + this.primerMessage.content + "\n \n No response as there will be multiple...", this.uniqueTimestamp, "DistractionPrompt.txt");
     }
 
+    async calculateTotalCharactersInConversation()
+    {
+        const totalCharacterCount = this.conversationHistory.reduce((acc, message) => {
+            return acc + message.content.length;
+          }, 0);
+
+          return totalCharacterCount;
+    }
+
+    async performDistractionConversations(DISTRACTION_TOPICS) {
+        const resultsList = []; 
+
+        for (const topic of DISTRACTION_TOPICS) {
+            this.logger(`Processing topic: ${topic}`, this.uniqueTimestamp, null, true);
+            
+            this.updatePrimerMessage(topic);
+            const results = await this.performConversation();
+    
+            const conversationHistory = this.getConversationHistory();
+    
+            resultsList.push({ results, conversationHistory });
+      
+            this.conversationHistory = [];
+        }
+    
+        return resultsList;
+    }
+
     async performConversation() {
         this.logger("The conversation between two bots is about to begin.", this.uniqueTimestamp, null, true);
-        this.logger("The conversation will continue for " + MAX_CONVERSATION_TURNS + " turns.\n", this.uniqueTimestamp, null, true);
+        this.logger("The conversation will continue until the conversation history exceeds " + MAX_CONVERSATION_CHARACTER_COUNT + " characters.\n", this.uniqueTimestamp, null, true);
 
         const copilotContainer = await copilotChatBot.startContainer();
 
@@ -119,10 +147,16 @@ class ConversationTracker {
         try {
             let botiumCopilotResponse = null;
 
-            for (let i = 0; i < MAX_CONVERSATION_TURNS; i++) {
-                this.logger('\nTurn ' + (i + 1) + '\n', this.uniqueTimestamp, null, true);
+            var conversationHistoryCharacterCount = 0;
 
-                const message = i === 0 ? botiumCopilotFirstResponse : botiumCopilotResponse;
+            let index = 0;
+            while (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
+               
+                conversationHistoryCharacterCount = await this.calculateTotalCharactersInConversation();
+                console.log("\nConversation character count: " + conversationHistoryCharacterCount + "/" +MAX_CONVERSATION_CHARACTER_COUNT + "\n");
+
+                const message = index === 0 ? botiumCopilotFirstResponse : botiumCopilotResponse;
+
                 const msgToSendToGPT = message.messageText;
 
                 this.logger('\x1b[36m' + this.DOMAINS[0].charAt(0).toUpperCase() + this.DOMAINS[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToGPT + '\n', this.uniqueTimestamp, null, true);
@@ -133,6 +167,8 @@ class ConversationTracker {
 
                 copilotContainer.UserSays({ messageText: response });
                 botiumCopilotResponse = await copilotContainer.WaitBotSays();
+
+                index++;
             }
 
             await stop(copilotContainer);

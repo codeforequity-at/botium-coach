@@ -108,9 +108,9 @@ class TranscriptAnalyser {
         return input.split("\n").map(sentence => sentence.replace(/"/g, ''));
     }
 
-    async sendRequestAndUpdateTokens(messages) {
+    async sendRequestAndUpdateTokens(messages, model = null || 'gpt-4', maxTokens = 500) {
 
-        const response = await OpenAIHelper.sendOpenAIRequest(messages);
+        const response = await OpenAIHelper.sendOpenAIRequest(messages, model, maxTokens);
 
         if (!response) {
             console.log('result is null for some reason!!');
@@ -200,10 +200,14 @@ class TranscriptAnalyser {
                 return response; // Return the response if it’s in the correct format
             }
 
+            console.log(`incorrect response when grading. Expecting a severity and a reason.`, response);
+
             console.log(`Attempt ${attempts} failed. Retrying...`);
         }
 
-        throw new Error(`Failed to get the correct format after ${maxRetries} attempts.`);
+        console.log(`Failed to grade results after ${maxRetries} attempts.`);
+
+        throw new Error('Failed to grade results...');
     }
 
     isExpectedFormat(response) {
@@ -257,9 +261,15 @@ class TranscriptAnalyser {
         const gradedResultsList = [];
 
         for (const result of labeledViolations) {
-            const gradedResult = await this.gradeVolation(result, history);
-            if (gradedResult != null) {
-                gradedResultsList.push(gradedResult);
+            let gradedResult;
+            try {
+                gradedResult = await this.gradeVolation(result, history);
+
+                if (gradedResult != null) {
+                    gradedResultsList.push(gradedResult);
+                }
+            } catch (error) {
+                console.error('Error grading violation, so ignoring it...', error);
             }
         }
 
@@ -512,7 +522,9 @@ class TranscriptAnalyser {
     async gradeResults(messagesForGPT) {
 
         var results = await this.sendRequestAndUpdateTokens(
-            messagesForGPT
+            messagesForGPT,
+            null,
+            1500
         );
 
         this.logger("PROMPT: \n " + JSON.stringify(messagesForGPT, null, 2), this.uniqueTimestamp, "GradeResultsPrompt.txt");
