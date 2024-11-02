@@ -44,25 +44,42 @@ class TranscriptAnalyser {
 
         try {
             //Step 1. Get sentances that violate the topics outself of the domain/s.
-            var bannedTopicViolationsAsArray = await this.identifyBannedTopics();
+            var bannedTopicViolationsAsArray = [];
+
+            try {
+                bannedTopicViolationsAsArray = await this.identifyBannedTopics();
+            } catch (error) {
+                console.error('Error fetching banned topics:', error);
+            }
+
+            // Fallback to an empty array if undefined
+            if (!Array.isArray(bannedTopicViolationsAsArray)) {
+                bannedTopicViolationsAsArray = [];
+            }
+            
             var bannedTopicsResults = bannedTopicViolationsAsArray.join('\n')
             this.logResults('Step 1. Banned topic violations', bannedTopicsResults, "ResultBreakdown.txt");
 
             //Step 2. Non domain results
             var nonDomainResults = await this.identifyNonDomainTopics()
-            if (nonDomainResults.leng == 0) return {
-                success: true, results: null
-            };
+           // if (nonDomainResults.leng == 0) return {
+             //   success: true, results: null
+            //};
             this.logResults('Step 2. Out of domain violations', nonDomainResults, "ResultBreakdown.txt");
 
+
             //Step 3. Filtering out any references to topics that are deemed OK.
+            var violationsExceptTopicsThatAreOkArray = [];
             if (this.OK_TOPICS.length > 0) {
-                var violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainResults);
-                this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, "ResultBreakdown.txt");
+                if(nonDomainResults.length > 0){
+                    violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainResults);
+                    this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, "ResultBreakdown.txt");
+                }
             }
             else {
                 violationsExceptTopicsThatAreOkArray = nonDomainResults;
             }
+
             var numberedViolations = [...bannedTopicViolationsAsArray.map(statement => ({ statement, type: 'banned' })), ...violationsExceptTopicsThatAreOkArray.map(statement => ({ statement, type: 'out of domain' }))];
 
             //Step 4. Grade the results that have now been categorised(each one is done individualy).
@@ -283,8 +300,6 @@ class TranscriptAnalyser {
             this.OK_TOPICS, this.commonInstance.formatTopicList, results
         );
 
-        this.logger('After excluding ok topics \n' + result, this.uniqueTimestamp);
-
         return result;
     }
 
@@ -307,26 +322,21 @@ class TranscriptAnalyser {
 
         var outOfOdmainResultsAsSring = nonDomainViolations.map((violation, index) => `${index + 1}. ${violation}`).join('\n');
 
-        if (OK_TOPICS.length > 0) {
+        var violationIndices = await this.sendRequestWithLogging(okTopicPrompt, "Results:\n" + outOfOdmainResultsAsSring, "OKTopicsPrompt.txt");
 
-            var violationIndices = await this.sendRequestWithLogging(okTopicPrompt, "Results:\n" + outOfOdmainResultsAsSring, "OKTopicsPrompt.txt");
+        //Turn the string into an array.
+        violationIndices = this.parseViolationIndices(violationIndices);
 
-            //Turn the string into an array.
-            violationIndices = this.parseViolationIndices(violationIndices);
+        var results = this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices);
 
-            var results = this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices);
-
-            return results;
-
-        } else {
-
-            return this.promptResults.nonDomainResultsAfterClean;
-        }
+        return results;
     }
 
     async analyzeBannedTopics(conversationHistory, BANNED_TOPICS, formatBulletList, sendRequestAndUpdateTokens) {
         try {
+
             if (BANNED_TOPICS.length > 0) {
+
                 const bannedTopicsPrompt = PromptTemplates.BANNED_TOPICS_PROMPT(BANNED_TOPICS, formatBulletList);
 
                 const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n');
@@ -360,7 +370,8 @@ class TranscriptAnalyser {
     }
 
     fetchViolatingMessages(transcript, violationIndices) {
-        return violationIndices.map(index => {
+
+        const violatingMessages = violationIndices.map(index => {
             // Subtract 1 from index to match the array's 0-based indexing
             const message = transcript[index - 1];
 
@@ -368,14 +379,17 @@ class TranscriptAnalyser {
             if (message && message.role === "user" && message.content) {
                 return message.content + "\n";
             }
-        });
+            return null; // Explicitly return null to avoid undefined
+        }).filter(message => message !== null); // Filter out null values
+
+        return violatingMessages && violatingMessages.length > 0 ? violatingMessages : [];
     }
 
     fetchViolatingMessagesFromArray(arr, indices) {
         return indices.map(index => {
             const adjustedIndex = index - 1;
-            return arr[adjustedIndex]
-        });
+            return arr[adjustedIndex] !== undefined ? arr[adjustedIndex] : null;
+        }).filter(message => message !== null);
     }
 
     parseViolationIndices(violationString) {
@@ -421,9 +435,6 @@ class TranscriptAnalyser {
 
             this.logger('There was a banned topic violation: \n' + bannedTopicViolations, this.uniqueTimestamp);
             this.logger('Out of domain violations: \n' + outOfDomainViolations, this.uniqueTimestamp);
-
-            console.log('bannedTopicViolations', bannedTopicViolations);
-            console.log('outOfDomainViolations', outOfDomainViolations);
 
             categorisedViolations = [
                 ...(bannedTopicViolations && bannedTopicViolations.trim() ? await this.getBannedResults(bannedTopicViolations, 'banned') : []),
