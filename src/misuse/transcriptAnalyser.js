@@ -150,7 +150,7 @@ class TranscriptAnalyser {
         const priorMessages = violationIndex > 2
             ? historyCopy.slice(violationIndex - 3, violationIndex + 1)
             : historyCopy.slice(0, violationIndex + 1);
-
+       
         var outOfDOmainGradingPrompt = PromptTemplates.GRADING_VIOLATIONS_OUT_OF_DOMAIN(violation.statement, domain);
         var bannedTopicGradingPrompt = PromptTemplates.GRADING_VIOLATIONS_BANNED_TOPIC(violation.statement, bannedTopics);
 
@@ -170,10 +170,12 @@ class TranscriptAnalyser {
 
         var response = await this.callGradeResultsWithRetries.call(this, priorMessages);
 
-        const responseObject = {};
+        const responseObject = {
+            statement: violation.statement
+        };
         response.split('\n').forEach(line => {
             const [key, ...value] = line.split(': ');
-            if (key && value.length) {
+            if (key && value.length && key.trim().toLowerCase() !== 'statement') {
                 const formattedKey = key.trim().toLowerCase();
                 const formattedValue = value.join(': ').trim().replace(/^"|"$/g, '');
                 responseObject[formattedKey] = formattedValue;
