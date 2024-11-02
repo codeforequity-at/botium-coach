@@ -47,9 +47,9 @@ class TranscriptAnalyser {
             var bannedTopicViolationsAsArray = await this.identifyBannedTopics();
             var bannedTopicsResults = bannedTopicViolationsAsArray.join('\n')
             this.logResults('Step 1. Banned topic violations', bannedTopicsResults, "ResultBreakdown.txt");
-            
+
             //Step 2. Non domain results
-            var nonDomainResults = await this.identifyNonDomainTopics()  
+            var nonDomainResults = await this.identifyNonDomainTopics()
             if (nonDomainResults.leng == 0) return {
                 success: true, results: null
             };
@@ -57,15 +57,14 @@ class TranscriptAnalyser {
 
             //Step 3. Filtering out any references to topics that are deemed OK.
             if (this.OK_TOPICS.length > 0) {
-            var violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainResults);
-            this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, "ResultBreakdown.txt");
+                var violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainResults);
+                this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, "ResultBreakdown.txt");
             }
-            else{
-               violationsExceptTopicsThatAreOkArray = nonDomainResults;
+            else {
+                violationsExceptTopicsThatAreOkArray = nonDomainResults;
             }
-        
-            var numberedViolations = [...bannedTopicViolationsAsArray.map(statement => ({statement, type: 'banned'})), ...violationsExceptTopicsThatAreOkArray.map(statement => ({statement, type: 'out of domain'}))];
-            
+            var numberedViolations = [...bannedTopicViolationsAsArray.map(statement => ({ statement, type: 'banned' })), ...violationsExceptTopicsThatAreOkArray.map(statement => ({ statement, type: 'out of domain' }))];
+
             //Step 4. Grade the results that have now been categorised(each one is done individualy).
             var gradedResults = await this.gradeCatergorisedResults(numberedViolations, history);
             this.logResults('Step 4. After grading the categorised results', gradedResults, "ResultBreakdown.txt");
@@ -74,11 +73,11 @@ class TranscriptAnalyser {
             gradedResults = this.removeDuplicateResults(gradedResults);
             this.logResults('Step 5. After removing any duplicates', gradedResults, "ResultBreakdown.txt");
 
-             //Step 6. Filter out severities of N/A
-             gradedResults = this.removeNonApplicableSeverity(gradedResults);
-             this.logResults('Step 6. After removing results with severity of N/A', gradedResults, "ResultBreakdown.txt");
+            //Step 6. Filter out severities of N/A
+            gradedResults = this.removeNonApplicableSeverity(gradedResults);
+            this.logResults('Step 6. After removing results with severity of N/A', gradedResults, "ResultBreakdown.txt");
 
-             this.promptResults.gradedResults = gradedResults;
+            this.promptResults.gradedResults = gradedResults;
 
             return this.promptResults;
 
@@ -89,137 +88,26 @@ class TranscriptAnalyser {
     }
 
     gpt4ResponseToArray(input) {
-         return input.split("\n").map(sentence => sentence.replace(/"/g, ''));
-    }
-
-    // Function to find the best match within any part of a given source message
-    findBestMatch(sentence, sourceMessages) {
-        const sanitizedSentence = this.sanitize(sentence);
-        const threshold = this.calculateThreshold(sanitizedSentence);
-    
-        for (const source of sourceMessages) {
-            const sanitizedSource = this.sanitize(source);
-            
-            console.log('\n is this:')
-            console.log(sanitizedSentence)
-            console.log('found within this:')
-            console.log(sanitizedSource)
-
-             // Use the levenshteinInclude function to check for a close substring match
-            if (this.levenshteinInclude(sanitizedSentence, sanitizedSource, threshold)) {
-                return source; // Return the full source sentence if a close substring match is found
-            }
-
-            // Calculate Levenshtein distance for fuzzy matching
-            const distance = Levenshtein(sanitizedSentence, sanitizedSource);
-            if (distance <= threshold) {
-                return source; // Return the full source sentence if within the threshold distance
-            }
-        }
-        return null;
-    }
-    
-    levenshteinInclude(target, source, threshold) {
-        const sanitizedTarget = this.sanitize(target).replace(/^"+|"+$/g, '').trim();
-        const sanitizedSource = this.sanitize(source).replace(/^"+|"+$/g, '').trim();
-    
-        // Early return if exact match exists
-        if (sanitizedSource.includes(sanitizedTarget)) {
-            console.log('yes 1')
-            return true;
-        }
-        else{
-            console.log('Not an exact match include');
-        }
-    
-        const targetLength = sanitizedTarget.length;
-    
-        for (let i = 0; i <= sanitizedSource.length - targetLength; i++) {
-            const substring = sanitizedSource.substring(i, i + targetLength);
-        
-            const distance = Levenshtein(sanitizedTarget, substring);
-    
-            //console.log('distance', distance)
-
-            if (distance <= threshold) {
-                console.log('yes 2')
-                return true;
-            }
-        }
-    
-        console.log('no')
-        return false;
-    }
-
-    sanitize(text) {
-        return text
-            .trim()                                    // Remove leading and trailing whitespace
-            .replace(/^"+|"+$/g, '')                   // Remove leading and trailing double quotes
-            .replace(/\s+/g, ' ')                      // Normalize whitespace
-            .replace(/[.,!?;:"'(){}[\]<>]/g, '')       // Optionally, remove punctuation
-            .replace(/\n/g, '')                        // Remove newlines
-            .toLowerCase();                            // Convert to lowercase
-    }    
-
-    // Function to dynamically calculate threshold based on sentence length
-    calculateThreshold(sentence) {
-        const length = sentence.length;
-        const percentage = 0.1; // Allow 10% of the sentence length as the threshold
-        return Math.max(1, Math.floor(length * percentage)); // Ensure at least a threshold of 1
-    }
-
-    async levenshteinReconcilation(transcript, nonDomainViolationsArray) {
-        // Extract user messages only from the transcript
-        const userMessagesOnly = transcript
-            .filter(entry => entry.role === 'user')
-            .map(entry => entry.content);
-       
-        // Verify each quoted sentence
-        const verifiedSentences = nonDomainViolationsArray.map(sentence => {
-
-            if (sentence.length > 200) {
-                sentence = sentence.substring(0, 200);
-            }
-
-            const match = this.findBestMatch(sentence, userMessagesOnly);
-            return match ? `"${match}"` : null; // Return the exact source match or null if no close match is found
-        }).filter(Boolean); // Remove any null entries
-
-        // Return the verified sentences as a joined string
-        return verifiedSentences.join("\n");
-    }
-
-    async sympathyDetection(messagesForGPT) {
-
-        var results = await this.sendRequestAndUpdateTokens(
-            messagesForGPT
-        );
-
-        this.logger("PROMPT: \n " + JSON.stringify(messagesForGPT, null, 2), this.uniqueTimestamp, "SympathyDetection.txt");
-        this.logger("", this.uniqueTimestamp);
-        this.logger("\n \nGPT-4 RESPONSE: \n" + results, this.uniqueTimestamp, "SympathyDetection.txt");
-
-        return results;
+        return input.split("\n").map(sentence => sentence.replace(/"/g, ''));
     }
 
     async sendRequestAndUpdateTokens(messages) {
-    
+
         const response = await OpenAIHelper.sendOpenAIRequest(messages);
-    
+
         if (!response) {
             console.log('result is null for some reason!!');
             console.log('This is what was being sent to GPT', messages);
             return null;
         }
-    
+
         const { result, prompt_tokens: promptUsed, completion_tokens: completionUsed } = response;
-    
+
         this.promptTokensUsed += promptUsed;
         this.completionTokensUsed += completionUsed;
-    
+
         return result;
     }
-    
 
     async gradeVolation(violation, history) {
 
@@ -265,7 +153,7 @@ class TranscriptAnalyser {
 
         var response = await this.callGradeResultsWithRetries.call(this, priorMessages);
 
-        const responseObject = { };
+        const responseObject = {};
         response.split('\n').forEach(line => {
             const [key, ...value] = line.split(': ');
             if (key && value.length) {
@@ -299,12 +187,7 @@ class TranscriptAnalyser {
         throw new Error(`Failed to get the correct format after ${maxRetries} attempts.`);
     }
 
-    isExpectedFormatExcusedOrViolation(response) {
-        return response.toLowerCase().includes("non-violation") && response.toLowerCase().includes("violation");
-    }
-
-    // Function to check if response matches the expected format
-    isExpectedFormat(response) {       
+    isExpectedFormat(response) {
         return response.includes("Severity:") && response.includes("Reason:");
     }
 
@@ -337,8 +220,8 @@ class TranscriptAnalyser {
         const finalResults = [];
 
         for (const result of results) {
-            if(result.severity !== 'N/A')
-            finalResults.push(result);
+            if (result.severity !== 'N/A')
+                finalResults.push(result);
         }
 
         this.logger('After removing duplicates:', this.uniqueTimestamp);
@@ -356,7 +239,7 @@ class TranscriptAnalyser {
 
         for (const result of labeledViolations) {
             const gradedResult = await this.gradeVolation(result, history);
-            if(gradedResult != null){
+            if (gradedResult != null) {
                 gradedResultsList.push(gradedResult);
             }
         }
@@ -394,13 +277,11 @@ class TranscriptAnalyser {
 
         var result = null;
 
-       
-            this.logger('Excluding topics that were marked as OK...', this.uniqueTimestamp);
-            this.logger('Before excluding ok topics \n' + results, this.uniqueTimestamp);
-            result = await this.excludeOKTopicViolations(
-                this.OK_TOPICS, this.commonInstance.formatTopicList, results
-            );
-      
+        this.logger('Excluding topics that were marked as OK...', this.uniqueTimestamp);
+        this.logger('Before excluding ok topics \n' + results, this.uniqueTimestamp);
+        result = await this.excludeOKTopicViolations(
+            this.OK_TOPICS, this.commonInstance.formatTopicList, results
+        );
 
         this.logger('After excluding ok topics \n' + result, this.uniqueTimestamp);
 
@@ -435,51 +316,13 @@ class TranscriptAnalyser {
 
             var results = this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices);
 
-           return results;
+            return results;
 
         } else {
 
             return this.promptResults.nonDomainResultsAfterClean;
         }
     }
-
-    filterOutAssistantUtterances(results, conversationHistory) {
-
-        this.logger('\nFiltering out utterances by the assistant...', this.uniqueTimestamp);
-        this.logger('Before filtering out utterances by the assistant: \n ' + results, this.uniqueTimestamp);
-
-        const hasMultipleQuotes = (results.match(/"/g) || []).length > 1;
-
-        let nonDomainList;
-        if (hasMultipleQuotes) {
-            nonDomainList = results.match(/"([^"]+)"/g).map(s => s.replace(/"/g, ''));
-        } else {
-            nonDomainList = results.split('\n');
-            nonDomainList = nonDomainList.map(sentence => sentence.trim()).filter(Boolean);
-        }
-
-        // Use sets for efficient lookup and exact matching
-        const assistantMessages = new Set(
-            conversationHistory
-                .filter(msg => msg.role === 'assistant')
-                .map(msg => msg.content.trim())
-        );
-
-        // Filter out sentences by checking exact matches against assistant messages
-        const filteredResults = nonDomainList.filter(sentence => {
-            const isFilteredOut = Array.from(assistantMessages).some(assistantMsg => {
-                // We check if the entire sentence or a closely matching sentence exists in assistant messages
-                return sentence === assistantMsg || assistantMsg.includes(sentence);
-            });
-            return !isFilteredOut;
-        });
-
-        this.logger('\nAfter removing assistant messages: ', this.uniqueTimestamp);
-        this.logger(filteredResults, this.uniqueTimestamp);
-
-        return filteredResults;
-    }
-
 
     async analyzeBannedTopics(conversationHistory, BANNED_TOPICS, formatBulletList, sendRequestAndUpdateTokens) {
         try {
@@ -520,7 +363,7 @@ class TranscriptAnalyser {
         return violationIndices.map(index => {
             // Subtract 1 from index to match the array's 0-based indexing
             const message = transcript[index - 1];
-            
+
             // Ensure it’s a user message and its not empty.
             if (message && message.role === "user" && message.content) {
                 return message.content + "\n";
@@ -536,7 +379,6 @@ class TranscriptAnalyser {
     }
 
     parseViolationIndices(violationString) {
-        // Split the string by commas, trim any whitespace, and convert each element to an integer
         return violationString.split(',').map(index => parseInt(index.trim(), 10));
     }
 
@@ -552,8 +394,8 @@ class TranscriptAnalyser {
             [
                 { role: 'system', content: nonDomainResultsPrompt },
                 { role: 'user', content: transcriptAsText }
-            ], 
-            null, 
+            ],
+            null,
             1500
         );
 
@@ -680,83 +522,6 @@ class TranscriptAnalyser {
         });
 
         return parsedData;
-    }
-
-    parseGradedResults(input) {
-        // Split the input string into an array by using double newlines as separators
-        const entries = input.trim().split('\n\n');
-
-        // Create an array to hold the parsed objects
-        const parsedData = entries.map(entry => {
-            const [sentenceLine, categoryLine, severityLine] = entry.split('\n');
-
-            // Ensure the lines are defined before proceeding
-            if (!sentenceLine || !categoryLine || !severityLine) {
-                console.error('Error: One of the lines is undefined:', { sentenceLine, categoryLine, severityLine });
-                return null;  // Return null or skip this entry
-            }
-
-            // Extract the sentence, category, and severity values
-            const sentence = sentenceLine.split(': ')[1] ? sentenceLine.split(': ')[1].replace(/"/g, '') : null;
-            const category = categoryLine.split(': ')[1] || null;
-            const severity = severityLine.split(': ')[1] || null;
-
-            // Check if any of the values are null or undefined
-            if (!sentence || !category || !severity) {
-                console.error('Error: Missing values in entry:', { sentence, category, severity });
-                return null;
-            }
-
-            return { sentence, category, severity };
-        }).filter(item => item !== null);  // Filter out any null entries
-
-        return parsedData;
-    }
-
-    doesResponseHaveSentances(results){
-        //The prompt asks for a blank return if there are no violations.
-        if (!results || results.trim() === '') {
-            return false;
-        }
-
-        //If we find quoataion, marks, we know there is something as we ask the prompt to wrap sentances in quoation marks.
-        if ((results.match(/"/g) || []).length >= 2) {
-            return true;
-        }
-
-        return false;
-    }
-
-    checkBannedTopicViolations(bannedTopicsResults) {
-        try {
-            //The prompt asks for a blank return if there are no violations.
-            if (!bannedTopicsResults || bannedTopicsResults.trim() === '') {
-                return false;
-            }
-
-            //If we find quoataion, marks, we know there is something as we ask the prompt to wrap sentances in quoation marks.
-            if ((bannedTopicsResults.match(/"/g) || []).length >= 2) {
-                return true;
-            }
-
-            console.log('parsing these banned topics.', bannedTopicsResults);
-
-            var parsedBannedTopics = null;
-            try {
-                parsedBannedTopics = this.parseBannedTopics(bannedTopicsResults);
-            } catch (error) {
-                console.error("Error parsing banned topics:", error);
-                console.error("Banned Topics Results:", bannedTopicsResults);
-                throw new Error("Error parsing banned topics. See above for results trying to parse.");
-            }
-
-            if (parsedBannedTopics.length > 0) {
-                return true;
-            }
-        } catch (error) {
-            console.error("Error checking banned topic violations:", error);
-            return false;
-        }
     }
 
     logResults(message, data, fileName) {
