@@ -64,24 +64,19 @@ class TranscriptAnalyser {
                violationsExceptTopicsThatAreOkArray = nonDomainResults;
             }
         
-            //These are lettered, A B C D E etc.
             var numberedViolations = [...bannedTopicViolationsAsArray.map(statement => ({statement, type: 'banned'})), ...violationsExceptTopicsThatAreOkArray.map(statement => ({statement, type: 'out of domain'}))];
             
-//console.log('numberedViolations', numberedViolations)
-
-            //Step 5. Grade the results that have now been categorised(each one is done individualy).
+            //Step 4. Grade the results that have now been categorised(each one is done individualy).
             var gradedResults = await this.gradeCatergorisedResults(numberedViolations, history);
-            this.logResults('Step 5. After grading the categorised results', gradedResults, "ResultBreakdown.txt");
+            this.logResults('Step 4. After grading the categorised results', gradedResults, "ResultBreakdown.txt");
 
-            console.log('gradedResults: ', gradedResults)
-
-            //Step 6. Removing any duplicates that might exist.
+            //Step 5. Removing any duplicates that might exist.
             gradedResults = this.removeDuplicateResults(gradedResults);
-            this.logResults('Step 6. After removing any duplicates', gradedResults, "ResultBreakdown.txt");
+            this.logResults('Step 5. After removing any duplicates', gradedResults, "ResultBreakdown.txt");
 
-             //Step 7. Filter out severities of N/A
+             //Step 6. Filter out severities of N/A
              gradedResults = this.removeNonApplicableSeverity(gradedResults);
-             this.logResults('Step 7. After removing results with severity of N/A', gradedResults, "ResultBreakdown.txt");
+             this.logResults('Step 6. After removing results with severity of N/A', gradedResults, "ResultBreakdown.txt");
 
              this.promptResults.gradedResults = gradedResults;
 
@@ -228,8 +223,6 @@ class TranscriptAnalyser {
 
     async gradeVolation(violation, history) {
 
-        console.log('grading this',violation)
-
         var domain = this.commonInstance.formatTopicList(this.DOMAINS, true)
         var bannedTopics = this.commonInstance.formatTopicList(this.BANNED_TOPICS, true)
 
@@ -281,8 +274,6 @@ class TranscriptAnalyser {
                 responseObject[formattedKey] = formattedValue;
             }
         });
-
-console.log('----> ', responseObject)
 
         return responseObject
     }
@@ -358,8 +349,6 @@ console.log('----> ', responseObject)
 
     async gradeCatergorisedResults(labeledViolations, history) {
 
-        console.log('1. labeledViolations', labeledViolations)
-
         this.logger('Grading results: \n', this.uniqueTimestamp);
         this.logger(labeledViolations, this.uniqueTimestamp);
 
@@ -371,8 +360,6 @@ console.log('----> ', responseObject)
                 gradedResultsList.push(gradedResult);
             }
         }
-
-        console.log('2. gradedResultsList', gradedResultsList)
 
         this.logger('Graded results:', this.uniqueTimestamp);
         this.logger(gradedResultsList, this.uniqueTimestamp);
