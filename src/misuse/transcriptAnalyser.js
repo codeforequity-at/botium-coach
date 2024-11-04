@@ -334,7 +334,7 @@ class TranscriptAnalyser {
 
         var outOfOdmainResultsAsSring = nonDomainViolations.map((violation, index) => `${index + 1}. ${violation}`).join('\n');
 
-        var violationIndices = await this.sendRequestWithLogging(okTopicPrompt, "Results:\n" + outOfOdmainResultsAsSring, "OKTopicsPrompt.txt");
+        var violationIndices = await this.sendRequestWithLogging(okTopicPrompt, "Results:\n" + outOfOdmainResultsAsSring, "3. OKTopicsPrompt.txt");
 
         //Turn the string into an array.
         violationIndices = this.parseViolationIndices(violationIndices);
@@ -366,10 +366,10 @@ class TranscriptAnalyser {
 
                 var results = this.fetchViolatingMessages(this.conversationHistory, violationIndices);
 
-                this.logger("PROMPT: \n " + bannedTopicsPrompt, this.uniqueTimestamp, "BannedTopicsPrompt.txt");
-                this.logger(historyMsg, this.uniqueTimestamp, "BannedTopicsPrompt.txt");
-                this.logger("\n \nGPT-4 RESPONSE: \n" + violationIndicies, this.uniqueTimestamp, "BannedTopicsPrompt.txt");
-                this.logger("\n \nGPT-4 RESPONSE: \n" + results, this.uniqueTimestamp, "BannedTopicsPrompt.txt");
+                this.logger("PROMPT: \n " + bannedTopicsPrompt, this.uniqueTimestamp, "1. BannedTopicsPrompt.txt");
+                this.logger(historyMsg, this.uniqueTimestamp, "1. BannedTopicsPrompt.txt");
+                this.logger("\n \nGPT-4 RESPONSE: \n" + violationIndicies, this.uniqueTimestamp, "1. BannedTopicsPrompt.txt");
+                this.logger("\n \nGPT-4 RESPONSE: \n" + results, this.uniqueTimestamp, "1. BannedTopicsPrompt.txt");
 
                 return results;
             }
@@ -429,10 +429,10 @@ class TranscriptAnalyser {
 
         var results = this.fetchViolatingMessages(this.conversationHistory, violationIndices);
 
-        this.logger("PROMPT: \n " + nonDomainResultsPrompt, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
-        this.logger(transcriptAsText, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
-        this.logger("\n \nGPT-4 RESPONSE: \n" + violationIndicies, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
-        this.logger("\n" + results, this.uniqueTimestamp, "OutOfDomainPrompt.txt");
+        this.logger("PROMPT: \n " + nonDomainResultsPrompt, this.uniqueTimestamp, "2. OutOfDomainPrompt.txt");
+        this.logger(transcriptAsText, this.uniqueTimestamp, "2.  OutOfDomainPrompt.txt");
+        this.logger("\n \nGPT-4 RESPONSE: \n" + violationIndicies, this.uniqueTimestamp, "2. OutOfDomainPrompt.txt");
+        this.logger("\n" + results, this.uniqueTimestamp, "2. OutOfDomainPrompt.txt");
 
         return results;
     }
@@ -527,9 +527,9 @@ class TranscriptAnalyser {
             1500
         );
 
-        this.logger("PROMPT: \n " + JSON.stringify(messagesForGPT, null, 2), this.uniqueTimestamp, "GradeResultsPrompt.txt");
+        this.logger("PROMPT: \n " + JSON.stringify(messagesForGPT, null, 2), this.uniqueTimestamp, "4. GradeResultsPrompt.txt");
         this.logger("", this.uniqueTimestamp);
-        this.logger("\n \nGPT-4 RESPONSE: \n" + results, this.uniqueTimestamp, "GradeResultsPrompt.txt");
+        this.logger("\n \nGPT-4 RESPONSE: \n" + results, this.uniqueTimestamp, "4. GradeResultsPrompt.txt");
 
         return results;
     }
