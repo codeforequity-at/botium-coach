@@ -107,31 +107,30 @@ class ConversationTracker {
         this.logger("PROMPT: \n " + this.primerMessage.content + "\n \n No response as there will be multiple...", this.uniqueTimestamp, "DistractionPrompt.txt");
     }
 
-    async calculateTotalCharactersInConversation()
-    {
+    async calculateTotalCharactersInConversation() {
         const totalCharacterCount = this.conversationHistory.reduce((acc, message) => {
             return acc + message.content.length;
-          }, 0);
+        }, 0);
 
-          return totalCharacterCount;
+        return totalCharacterCount;
     }
 
     async performDistractionConversations(DISTRACTION_TOPICS) {
-        const resultsList = []; 
+        const resultsList = [];
 
         for (const topic of DISTRACTION_TOPICS) {
             this.logger(`Processing topic: ${topic}`, this.uniqueTimestamp, null, true);
-            
+
             this.updatePrimerMessage(topic);
             const results = await this.performConversation();
-    
+
             const conversationHistory = this.getConversationHistory();
-    
+
             resultsList.push({ results, conversationHistory });
-      
+
             this.conversationHistory = [];
         }
-    
+
         return resultsList;
     }
 
@@ -151,9 +150,6 @@ class ConversationTracker {
 
             let index = 0;
             while (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
-               
-                conversationHistoryCharacterCount = await this.calculateTotalCharactersInConversation();
-                console.log("\nConversation character count: " + conversationHistoryCharacterCount + "/" +MAX_CONVERSATION_CHARACTER_COUNT + "\n");
 
                 const message = index === 0 ? botiumCopilotFirstResponse : botiumCopilotResponse;
 
@@ -161,12 +157,19 @@ class ConversationTracker {
 
                 this.logger('\x1b[36m' + this.DOMAINS[0].charAt(0).toUpperCase() + this.DOMAINS[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToGPT + '\n', this.uniqueTimestamp, null, true);
 
-                const response = await this.generateResponse(msgToSendToGPT, 500);
+                conversationHistoryCharacterCount = await this.calculateTotalCharactersInConversation();
 
-                this.logger("\x1b[95mDistraction Bot: \x1b[0m" + response, this.uniqueTimestamp, null, true);
+                if (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
+                    //Only ask the question if we ar within the limit.
+                    const response = await this.generateResponse(msgToSendToGPT, 500);
+                    this.logger("\x1b[95mDistraction Bot: \x1b[0m" + response, this.uniqueTimestamp, null, true);
+                    copilotContainer.UserSays({ messageText: response });
+                    botiumCopilotResponse = await copilotContainer.WaitBotSays();
 
-                copilotContainer.UserSays({ messageText: response });
-                botiumCopilotResponse = await copilotContainer.WaitBotSays();
+                    conversationHistoryCharacterCount = await this.calculateTotalCharactersInConversation();
+                }
+
+                console.log("\nConversation character count: " + conversationHistoryCharacterCount + "/" + MAX_CONVERSATION_CHARACTER_COUNT + "\n");
 
                 index++;
             }
