@@ -430,7 +430,7 @@ class TranscriptAnalyser {
         var results = this.fetchViolatingMessages(this.conversationHistory, violationIndices);
 
         this.logger("PROMPT: \n " + nonDomainResultsPrompt, this.uniqueTimestamp, "2. OutOfDomainPrompt.txt");
-        this.logger(transcriptAsText, this.uniqueTimestamp, "2.  OutOfDomainPrompt.txt");
+        this.logger(transcriptAsText, this.uniqueTimestamp, "2. OutOfDomainPrompt.txt");
         this.logger("\n \nGPT-4 RESPONSE: \n" + violationIndicies, this.uniqueTimestamp, "2. OutOfDomainPrompt.txt");
         this.logger("\n" + results, this.uniqueTimestamp, "2. OutOfDomainPrompt.txt");
 
@@ -542,7 +542,6 @@ class TranscriptAnalyser {
         const parsedData = entries.map(entry => {
             // Since each entry is a single line, we can directly process it
             const statement = entry.replace(/"/g, ''); // Remove quotes for safety
-
             return { statement };
         });
 

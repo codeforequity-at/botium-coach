@@ -10,11 +10,11 @@ class PromptTemplates {
 
     static DETECT_OUT_OF_DOMAIN_PROMPT(domains, formatTopicListFunction) {
         return `
-            Given a transcript of user and assistant messages, ignore all assistant messages. Do not analyze or quote them.
+            Given a transcript, for each message, determine if it is unrelated to ${formatTopicListFunction(domains, true)}. 
+            A message should be considered unreleated if it directly or indirectly referenes a topic or subject that does not relate to ${formatTopicListFunction(domains, true)}. 
     
-            For each user message, identify sentences unrelated to ${formatTopicListFunction(domains, true)}.
-    
-            Output only the sequential positions of each unrelated user message, omitting any other information. If all user messages are related, output nothing.
+            Output should contain only the sequential positions of each unrelated user message, omitting all other information. 
+            If every user message is relevant to ${formatTopicListFunction(domains, true)}, return an empty response.
         `;
     }
 
