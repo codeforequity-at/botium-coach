@@ -2,7 +2,6 @@ const OpenAIHelper = require('./openaiHelper.js');
 
 const Common = require('./common.js');
 const PromptTemplates = require('./prompts.js');
-const Levenshtein = require('js-levenshtein');
 
 class TranscriptAnalyser {
     constructor({ CONFUSED_SENTANCES = [], DOMAINS = [], BANNED_TOPICS = [], OK_TOPICS = [], conversationHistory = [], uniqueTimestamp = null, promptTokensUsed = 0, completionTokensUsed = 0 } = {}, logger) {
@@ -24,6 +23,53 @@ class TranscriptAnalyser {
         this.commonInstance = new Common(this.logger);
     }
 
+    async getBannedTopicViolations() {
+        var bannedTopicViolationsAsArray = [];
+
+        try {
+            bannedTopicViolationsAsArray = await this.identifyBannedTopics();
+        } catch (error) {
+            console.error('Error fetching banned topics:', error);
+        }
+
+        // Fallback to an empty array if undefined
+        if (!Array.isArray(bannedTopicViolationsAsArray)) {
+            bannedTopicViolationsAsArray = [];
+        }
+
+        return bannedTopicViolationsAsArray;
+    }
+
+    async filterOutOkTopicViolations(nonDomainViolations, bannedTopicViolationsAsArray){
+        var violationsExceptTopicsThatAreOkArray = [];
+        if (this.OK_TOPICS.length > 0) {
+            if(nonDomainViolations.length > 0){
+                violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainViolations);
+                this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, "ResultBreakdown.txt");
+            }
+        }
+        else {
+            violationsExceptTopicsThatAreOkArray = nonDomainViolations;
+        }
+
+        var numberedViolations = this.numberViolations(violationsExceptTopicsThatAreOkArray, bannedTopicViolationsAsArray);
+
+        return numberedViolations;
+    }
+
+    numberViolations(outStandingExceptions, bannedTopicViolationsAsArray) {
+        var numberedViolations = [...bannedTopicViolationsAsArray.map(statement => ({ statement, type: 'banned' })), ...outStandingExceptions.map(statement => ({ statement, type: 'out of domain' }))];
+        return numberedViolations;
+    }
+
+    prepareResults(gradedResults) {
+        this.promptResults.gradedResults = gradedResults;
+        this.promptResults.promptTokensUsed = this.promptTokensUsed;
+        this.promptResults.completionTokensUsed = this.completionTokensUsed;
+
+        return this.promptResults;
+    }
+
     async analyseConversation(timeStamp, history) {
         this.uniqueTimestamp = timeStamp;
         this.conversationHistory = history;
@@ -38,45 +84,18 @@ class TranscriptAnalyser {
 
         try {
             //Step 1. Get sentances that violate the topics outself of the domain/s.
-            var bannedTopicViolationsAsArray = [];
-
-            try {
-                bannedTopicViolationsAsArray = await this.identifyBannedTopics();
-            } catch (error) {
-                console.error('Error fetching banned topics:', error);
-            }
-
-            // Fallback to an empty array if undefined
-            if (!Array.isArray(bannedTopicViolationsAsArray)) {
-                bannedTopicViolationsAsArray = [];
-            }
-            
-            var bannedTopicsResults = bannedTopicViolationsAsArray.join('\n')
-            this.logResults('Step 1. Banned topic violations', bannedTopicsResults, "ResultBreakdown.txt");
+            var bannedtopicViolations = await this.getBannedTopicViolations();
+            this.logResults('Step 1. Banned topic violations', bannedtopicViolations, "ResultBreakdown.txt");
 
             //Step 2. Non domain results
-            var nonDomainResults = await this.identifyNonDomainTopics()
-           // if (nonDomainResults.leng == 0) return {
-             //   success: true, results: null
-            //};
-            this.logResults('Step 2. Out of domain violations', nonDomainResults, "ResultBreakdown.txt");
+            var nonDomainViolations = await this.identifyNonDomainViolations()
+            this.logResults('Step 2. Out of domain violations', nonDomainViolations, "ResultBreakdown.txt");
 
             //Step 3. Filtering out any references to topics that are deemed OK.
-            var violationsExceptTopicsThatAreOkArray = [];
-            if (this.OK_TOPICS.length > 0) {
-                if(nonDomainResults.length > 0){
-                    violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainResults);
-                    this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, "ResultBreakdown.txt");
-                }
-            }
-            else {
-                violationsExceptTopicsThatAreOkArray = nonDomainResults;
-            }
-
-            var numberedViolations = [...bannedTopicViolationsAsArray.map(statement => ({ statement, type: 'banned' })), ...violationsExceptTopicsThatAreOkArray.map(statement => ({ statement, type: 'out of domain' }))];
-
+            var outStandingExceptions = await this.filterOutOkTopicViolations(nonDomainViolations, bannedtopicViolations);
+            
             //Step 4. Grade the results that have now been categorised(each one is done individualy).
-            var gradedResults = await this.gradeCatergorisedResults(numberedViolations, history);
+            var gradedResults = await this.gradeCatergorisedResults(outStandingExceptions, history);
             this.logResults('Step 4. After grading the categorised results', gradedResults, "ResultBreakdown.txt");
 
             //Step 5. Removing any duplicates that might exist.
@@ -87,12 +106,7 @@ class TranscriptAnalyser {
             gradedResults = this.removeNonApplicableSeverity(gradedResults);
             this.logResults('Step 6. After removing results with severity of N/A', gradedResults, "ResultBreakdown.txt");
 
-            this.promptResults.gradedResults = gradedResults;
-
-            this.promptResults.promptTokensUsed = this.promptTokensUsed;
-            this.promptResults.completionTokensUsed = this.completionTokensUsed;
-
-            return this.promptResults;
+            return this.prepareResults(gradedResults);
 
         } catch (error) {
             console.error("\nError analysing conversation:\n", error);
@@ -188,12 +202,10 @@ class TranscriptAnalyser {
         while (attempts < maxRetries) {
             attempts++;
 
-            // Attempt to call the gradeResults function
             response = await this.gradeResults(historyCopy);
 
-            // Check if the response matches the expected format (adjust this check as needed)
             if (this.isExpectedFormat(response)) {
-                return response; // Return the response if it’s in the correct format
+                return response;
             }
 
             console.log(`incorrect response when grading. Expecting a severity and a reason.`, response);
@@ -287,7 +299,7 @@ class TranscriptAnalyser {
         return result;
     }
 
-    async identifyNonDomainTopics() {
+    async identifyNonDomainViolations() {
         this.logger('Identifying if the LLM discussed topics outside of the domain...', this.uniqueTimestamp);
 
         var result = await this.analyzeNonDomainResults(this.DOMAINS, this.sendRequestAndUpdateTokens.bind(this));
