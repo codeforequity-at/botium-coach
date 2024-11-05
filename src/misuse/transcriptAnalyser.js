@@ -7,7 +7,9 @@ const Levenshtein = require('js-levenshtein');
 class TranscriptAnalyser {
     constructor({ CONFUSED_SENTANCES = [], DOMAINS = [], BANNED_TOPICS = [], OK_TOPICS = [], conversationHistory = [], uniqueTimestamp = null, promptTokensUsed = 0, completionTokensUsed = 0 } = {}, logger) {
         this.promptResults = {
-            gradedResults: null
+            gradedResults: null,
+            promptTokensUsed: null,
+            completionTokensUsed: null
         };
 
         this.CONFUSED_SENTANCES = CONFUSED_SENTANCES;
@@ -86,6 +88,9 @@ class TranscriptAnalyser {
             this.logResults('Step 6. After removing results with severity of N/A', gradedResults, "ResultBreakdown.txt");
 
             this.promptResults.gradedResults = gradedResults;
+
+            this.promptResults.promptTokensUsed = this.promptTokensUsed;
+            this.promptResults.completionTokensUsed = this.completionTokensUsed;
 
             return this.promptResults;
 
