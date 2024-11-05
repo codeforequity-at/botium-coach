@@ -100,7 +100,7 @@ class ConversationTracker {
     }
 
     updatePrimerMessage(topic) {
-        this.primerMessage.content = PromptTemplates.DISTRCATION_PROMPT(topic, this.DOMAINS.length > 1 ? `any of the following domains (${this.commonInstance.formatTopicList(this.DOMAINS, true)})` : this.DOMAINS[0])
+        this.primerMessage.content = PromptTemplates.DISTRCATION_PROMPT(topic)
             .replace(/{DISTRACTION}/g, topic)
             .replace(/{DOMAIN}/g, this.DOMAINS[0]);
 

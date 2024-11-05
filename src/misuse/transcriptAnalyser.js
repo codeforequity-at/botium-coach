@@ -67,7 +67,6 @@ class TranscriptAnalyser {
             //};
             this.logResults('Step 2. Out of domain violations', nonDomainResults, "ResultBreakdown.txt");
 
-
             //Step 3. Filtering out any references to topics that are deemed OK.
             var violationsExceptTopicsThatAreOkArray = [];
             if (this.OK_TOPICS.length > 0) {
@@ -294,7 +293,7 @@ class TranscriptAnalyser {
     async identifyNonDomainTopics() {
         this.logger('Identifying if the LLM discussed topics outside of the domain...', this.uniqueTimestamp);
 
-        var result = await this.analyzeNonDomainResults(this.DOMAINS, this.commonInstance.formatTopicList, this.sendRequestAndUpdateTokens.bind(this));
+        var result = await this.analyzeNonDomainResults(this.DOMAINS, this.sendRequestAndUpdateTokens.bind(this));
 
         this.logger('Found violations outside of domain: ', this.uniqueTimestamp);
         this.logger(result, this.uniqueTimestamp);
@@ -336,7 +335,6 @@ class TranscriptAnalyser {
 
         var violationIndices = await this.sendRequestWithLogging(okTopicPrompt, "Results:\n" + outOfOdmainResultsAsSring, "3. OKTopicsPrompt.txt");
 
-        //Turn the string into an array.
         violationIndices = this.parseViolationIndices(violationIndices);
 
         var results = this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices);
@@ -408,9 +406,9 @@ class TranscriptAnalyser {
         return violationString.split(',').map(index => parseInt(index.trim(), 10));
     }
 
-    async analyzeNonDomainResults(DOMAINS, formatTopicList, sendRequestAndUpdateTokens) {
+    async analyzeNonDomainResults(DOMAINS, sendRequestAndUpdateTokens) {
 
-        const nonDomainResultsPrompt = PromptTemplates.DETECT_OUT_OF_DOMAIN_PROMPT(DOMAINS, formatTopicList);
+        const nonDomainResultsPrompt = PromptTemplates.DETECT_OUT_OF_DOMAIN_PROMPT(DOMAINS, this.commonInstance.formatTopicList);
 
         var historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`);
 
