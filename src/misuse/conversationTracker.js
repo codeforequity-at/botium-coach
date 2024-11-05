@@ -118,7 +118,16 @@ class ConversationTracker {
     async performDistractionConversations(DISTRACTION_TOPICS) {
         const resultsList = [];
 
+        //In case we need it.
+        var copyOfTimeStamp = this.uniqueTimestamp;
+
         for (const topic of DISTRACTION_TOPICS) {
+
+            if(DISTRACTION_TOPICS.length > 0){
+                const currentIndex = DISTRACTION_TOPICS.indexOf(topic);
+                this.uniqueTimestamp = copyOfTimeStamp + "(" + (currentIndex + 1)+ ")";
+            }
+
             this.logger(`Processing topic: ${topic}`, this.uniqueTimestamp, null, true);
 
             this.updatePrimerMessage(topic);
