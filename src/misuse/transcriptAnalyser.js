@@ -7,15 +7,7 @@ const Levenshtein = require('js-levenshtein');
 class TranscriptAnalyser {
     constructor({ CONFUSED_SENTANCES = [], DOMAINS = [], BANNED_TOPICS = [], OK_TOPICS = [], conversationHistory = [], uniqueTimestamp = null, promptTokensUsed = 0, completionTokensUsed = 0 } = {}, logger) {
         this.promptResults = {
-            misuse_topics: null,
-            bannedTopicsResults: null,
-            nonDomainResults: null,
-            nonDomainResultsAfterClean: null,
-            excludeOkTopicResults: null,
-            part4: null,
-            categoryResults: null,
-            gradedResults: null,
-            highlting: null,
+            gradedResults: null
         };
 
         this.CONFUSED_SENTANCES = CONFUSED_SENTANCES;
