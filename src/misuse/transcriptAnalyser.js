@@ -1,5 +1,4 @@
 const OpenAIHelper = require('./openaiHelper.js');
-
 const Common = require('./common.js');
 const PromptTemplates = require('./prompts.js');
 
@@ -40,10 +39,10 @@ class TranscriptAnalyser {
         return bannedTopicViolationsAsArray;
     }
 
-    async filterOutOkTopicViolations(nonDomainViolations, bannedTopicViolationsAsArray){
+    async filterOutOkTopicViolations(nonDomainViolations, bannedTopicViolationsAsArray) {
         var violationsExceptTopicsThatAreOkArray = [];
         if (this.OK_TOPICS.length > 0) {
-            if(nonDomainViolations.length > 0){
+            if (nonDomainViolations.length > 0) {
                 violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainViolations);
                 this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, "ResultBreakdown.txt");
             }
@@ -52,14 +51,11 @@ class TranscriptAnalyser {
             violationsExceptTopicsThatAreOkArray = nonDomainViolations;
         }
 
-        var numberedViolations = this.numberViolations(violationsExceptTopicsThatAreOkArray, bannedTopicViolationsAsArray);
-
-        return numberedViolations;
+        return this.numberViolations(violationsExceptTopicsThatAreOkArray, bannedTopicViolationsAsArray);
     }
 
     numberViolations(outStandingExceptions, bannedTopicViolationsAsArray) {
-        var numberedViolations = [...bannedTopicViolationsAsArray.map(statement => ({ statement, type: 'banned' })), ...outStandingExceptions.map(statement => ({ statement, type: 'out of domain' }))];
-        return numberedViolations;
+        return [...bannedTopicViolationsAsArray.map(statement => ({ statement, type: 'banned' })), ...outStandingExceptions.map(statement => ({ statement, type: 'out of domain' }))];
     }
 
     prepareResults(gradedResults) {
@@ -93,7 +89,7 @@ class TranscriptAnalyser {
 
             //Step 3. Filtering out any references to topics that are deemed OK.
             var outStandingExceptions = await this.filterOutOkTopicViolations(nonDomainViolations, bannedtopicViolations);
-            
+
             //Step 4. Grade the results that have now been categorised(each one is done individualy).
             var gradedResults = await this.gradeCatergorisedResults(outStandingExceptions, history);
             this.logResults('Step 4. After grading the categorised results', gradedResults, "ResultBreakdown.txt");
@@ -107,7 +103,6 @@ class TranscriptAnalyser {
             this.logResults('Step 6. After removing results with severity of N/A', gradedResults, "ResultBreakdown.txt");
 
             return this.prepareResults(gradedResults);
-
         } catch (error) {
             console.error("\nError analysing conversation:\n", error);
             return false;
@@ -123,8 +118,6 @@ class TranscriptAnalyser {
         const response = await OpenAIHelper.sendOpenAIRequest(messages, model, maxTokens);
 
         if (!response) {
-            console.log('result is null for some reason!!');
-            console.log('This is what was being sent to GPT', messages);
             return null;
         }
 
@@ -136,6 +129,20 @@ class TranscriptAnalyser {
         return result;
     }
 
+    locateViolationIndex(conversationHistory, violation) {
+        const violationIndex = conversationHistory.findIndex(
+            item => item && item.content && violation && violation.statement && item.content.replace(/\s+|\n|\r/g, ' ').trim() === violation.statement.replace(/\s+|\n|\r/g, ' ').trim()
+        );
+        return violationIndex;
+    }
+
+    // Retrieve up to 3 messages preceding the violation, including the violation itself
+    getPrecedingMessages(violationIndex, historyCopy) {
+        return violationIndex > 2
+            ? historyCopy.slice(violationIndex - 3, violationIndex + 1)
+            : historyCopy.slice(0, violationIndex + 1);
+    }
+
     async gradeVolation(violation, history) {
 
         var domain = this.commonInstance.formatTopicList(this.DOMAINS, true)
@@ -143,34 +150,23 @@ class TranscriptAnalyser {
 
         let historyCopy = [...history];
 
-        // Find the index of the violation in the history
-        const violationIndex = historyCopy.findIndex(
-            item => item && item.content && violation && violation.statement && item.content.replace(/\s+|\n|\r/g, ' ').trim() === violation.statement.replace(/\s+|\n|\r/g, ' ').trim()
-        );
+        const violationIndex = this.locateViolationIndex(historyCopy, violation);
 
         if (violationIndex === -1) {
             console.error('Violation statement not found in history:', violation.statement);
-
             console.error('Here is the history:', historyCopy);
-
             return null;
         }
 
-        // Retrieve up to 3 messages preceding the violation, including the violation itself
-        const priorMessages = violationIndex > 2
-            ? historyCopy.slice(violationIndex - 3, violationIndex + 1)
-            : historyCopy.slice(0, violationIndex + 1);
-       
-        var outOfDOmainGradingPrompt = PromptTemplates.GRADING_VIOLATIONS_OUT_OF_DOMAIN(violation.statement, domain);
-        var bannedTopicGradingPrompt = PromptTemplates.GRADING_VIOLATIONS_BANNED_TOPIC(violation.statement, bannedTopics);
+        const priorMessages = this.getPrecedingMessages(violationIndex, historyCopy);
 
         var promptToUse = null;
 
         if (violation.type === 'banned') {
-            promptToUse = bannedTopicGradingPrompt;
+            promptToUse = PromptTemplates.GRADING_VIOLATIONS_BANNED_TOPIC(violation.statement, bannedTopics);
         }
         else if (violation.type === 'out of domain') {
-            promptToUse = outOfDOmainGradingPrompt;
+            promptToUse = PromptTemplates.GRADING_VIOLATIONS_OUT_OF_DOMAIN(violation.statement, domain);
         }
 
         priorMessages.unshift({
@@ -209,7 +205,6 @@ class TranscriptAnalyser {
             }
 
             console.log(`incorrect response when grading. Expecting a severity and a reason.`, response);
-
             console.log(`Attempt ${attempts} failed. Retrying...`);
         }
 
@@ -337,18 +332,11 @@ class TranscriptAnalyser {
     }
 
     async excludeOKTopicViolations(OK_TOPICS, formatTopicList, nonDomainViolations) {
-
         const okTopicPrompt = PromptTemplates.DETECT_OK_TOPIC_PROMPT(OK_TOPICS, formatTopicList);
-
         var outOfOdmainResultsAsSring = nonDomainViolations.map((violation, index) => `${index + 1}. ${violation}`).join('\n');
-
         var violationIndices = await this.sendRequestWithLogging(okTopicPrompt, "Results:\n" + outOfOdmainResultsAsSring, "3. OKTopicsPrompt.txt");
-
         violationIndices = this.parseViolationIndices(violationIndices);
-
-        var results = this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices);
-
-        return results;
+        return this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices);
     }
 
     async analyzeBannedTopics(conversationHistory, BANNED_TOPICS, formatBulletList, sendRequestAndUpdateTokens) {
