@@ -2,12 +2,13 @@ const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 class OpenAIHelper {
-    static async sendOpenAIRequest(messages, model = null || 'gpt-4', maxTokens = 500) {
+    static async sendOpenAIRequest(messages) {
         if (typeof messages === 'string') {
             messages = [{ role: 'user', content: messages }];
         }
 
-        model = model || process.env.OPENAI_API_MODEL || 'gpt-4';
+       var model = process.env.OPENAI_API_MODEL || 'gpt-4';
+       var maxTokens = 500;
 
         const gptQueriesRequest = {
             model: model,
@@ -30,6 +31,8 @@ class OpenAIHelper {
 
         } catch (error) {
             console.error('Error in OpenAI request:', error.response ? error.response.data : error.message);
+            console.log('Tried sending this:', messages);
+            console.error('Stack trace:', error.stack);
             return null;
         }
     }

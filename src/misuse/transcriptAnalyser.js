@@ -1,4 +1,5 @@
-const OpenAIHelper = require('./openaiHelper.js');
+const OpenAIHelper = require('./llmProviders/openaiHelper.js');
+const LlamaModelClient = require('./llmProviders/LlamaModelClient.js');
 const Common = require('./common.js');
 const PromptTemplates = require('./prompts.js');
 
@@ -113,9 +114,42 @@ class TranscriptAnalyser {
         return input.split("\n").map(sentence => sentence.replace(/"/g, ''));
     }
 
-    async sendRequestAndUpdateTokens(messages, model = null || 'gpt-4', maxTokens = 500) {
+    async sendRequestAndUpdateTokens(systemContent=null, userContent = null, messagesAsObject= null) {
+         //In the future we should interface this out.
+        var useLlama = false;
+        if (useLlama) {
+            return await this.sendLlamaRequest(systemContent, userContent, messagesAsObject);
+        } else {
+            return await this.sendOpenAIRequest(systemContent, userContent, messagesAsObject);
+        }
+    }
 
-        const response = await OpenAIHelper.sendOpenAIRequest(messages, model, maxTokens);
+    async sendLlamaRequest(systemContent, userContent, messagesAsObject) {
+        // Concatenate the system and user content as plain text for LLaMA
+        if (messagesAsObject == null) {
+            messagesAsObject = `${systemContent ? systemContent + "\n\n" : ""}${userContent}`;
+        } else {
+            // Convert array to prompt text.
+            messagesAsObject = messagesAsObject.map(message => `${message.role}: ${message.content}`).join("\n");
+        }
+
+        const llamaClient = new LlamaModelClient();
+
+        const result = await llamaClient.getResponse(messagesAsObject);
+
+        this.conversationHistory.push({ role: 'assistant', content: result });
+        return result;
+    }
+
+    async sendOpenAIRequest(systemContent, userContent, messagesAsObject) {
+
+        if (messagesAsObject == null)
+            var messagesAsObject = [
+                { role: 'system', content: systemContent },
+                { role: 'user', content: userContent }
+            ];
+
+        const response = await OpenAIHelper.sendOpenAIRequest(messagesAsObject);
 
         if (!response) {
             return null;
@@ -285,7 +319,7 @@ class TranscriptAnalyser {
     async identifyBannedTopics() {
         this.logger('Identifying if the LLM discussed banned topics...', this.uniqueTimestamp);
         var result = await this.analyzeBannedTopics(
-            this.conversationHistory, this.BANNED_TOPICS, this.commonInstance.formatBulletList, this.sendRequestAndUpdateTokens.bind(this)
+            this.conversationHistory, this.BANNED_TOPICS, this.commonInstance.formatBulletList
         );
         this.logger('Found banned topics(below)', this.uniqueTimestamp);
         this.logger(result, this.uniqueTimestamp);
@@ -320,8 +354,7 @@ class TranscriptAnalyser {
 
     async sendRequestWithLogging(prompt, userMessage, logFileName) {
         const result = await this.sendRequestAndUpdateTokens(
-            [{ role: 'system', content: prompt },
-            { role: 'user', content: userMessage }]
+            prompt, userMessage
         );
 
         this.logger("PROMPT: \n " + prompt, this.uniqueTimestamp, logFileName);
@@ -339,7 +372,7 @@ class TranscriptAnalyser {
         return this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices);
     }
 
-    async analyzeBannedTopics(conversationHistory, BANNED_TOPICS, formatBulletList, sendRequestAndUpdateTokens) {
+    async analyzeBannedTopics(conversationHistory, BANNED_TOPICS, formatBulletList) {
         try {
 
             if (BANNED_TOPICS.length > 0) {
@@ -348,13 +381,9 @@ class TranscriptAnalyser {
 
                 const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n');
 
-                var violationIndicies = await sendRequestAndUpdateTokens(
-                    [
-                        { role: 'system', content: bannedTopicsPrompt },
-                        { role: 'user', content: historyMsg }
-                    ],
-                    null,
-                    1500
+                var violationIndicies = await this.sendRequestAndUpdateTokens(
+                        bannedTopicsPrompt,
+                        historyMsg
                 );
 
                 const violationIndices = this.parseViolationIndices(violationIndicies);
@@ -412,12 +441,8 @@ class TranscriptAnalyser {
         const transcriptAsText = 'Transcript:\n' + historyAsString.join('\n')
 
         var violationIndicies = await sendRequestAndUpdateTokens(
-            [
-                { role: 'system', content: nonDomainResultsPrompt },
-                { role: 'user', content: transcriptAsText }
-            ],
-            null,
-            1500
+            nonDomainResultsPrompt,
+            transcriptAsText
         );
 
         const violationIndices = this.parseViolationIndices(violationIndicies);
@@ -491,8 +516,8 @@ class TranscriptAnalyser {
 
         const categorisedResults = await this.sendRequestAndUpdateTokens(
             [
-                { role: 'system', content: PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT() },
-                { role: 'user', content: "Sentences: \n" + resultsToCategorise }
+                PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT(),
+                "Sentences: \n" + resultsToCategorise 
             ]
         );
 
@@ -517,9 +542,9 @@ class TranscriptAnalyser {
     async gradeResults(messagesForGPT) {
 
         var results = await this.sendRequestAndUpdateTokens(
-            messagesForGPT,
             null,
-            1500
+            null,
+            messagesForGPT           
         );
 
         this.logger("PROMPT: \n " + JSON.stringify(messagesForGPT, null, 2), this.uniqueTimestamp, "4. GradeResultsPrompt.txt");

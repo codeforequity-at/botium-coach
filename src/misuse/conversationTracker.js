@@ -1,5 +1,6 @@
 const copilotChatBot = require('./copilot/index.js');
-const OpenAIHelper = require('./openaiHelper.js');
+const OpenAIHelper = require('./llmProviders/openaiHelper.js');
+const LlamaModelClient = require('./llmProviders/LlamaModelClient.js');
 const { TranscriptAnalyser } = require('./transcriptAnalyser.js');
 const Common = require('./common.js');
 
@@ -84,19 +85,43 @@ class ConversationTracker {
         let messages = this.prepareMessagesForResponse(prompt);
 
         try {
-            const { result, prompt_tokens: promptUsed, completion_tokens: completionUsed } = await OpenAIHelper.sendOpenAIRequest(
-                messages, null, maxTokens
-            );
+            //In the future we should interface this out.
+            var useLlama = false;
 
-            this.promptTokensUsed += promptUsed;
-            this.completionTokensUsed += completionUsed;
-
-            this.conversationHistory.push({ role: 'assistant', content: result });
-            return result;
+            if (useLlama) {
+                return await this.generateLlamaResponse(prompt);
+            } else {
+                return await this.generateOpenAIResponse(messages, maxTokens);
+            }
+            
         } catch (error) {
             console.error('Error:', error.response ? error.response.data : error.message);
             return 'An error occurred while processing your request.';
         }
+    }
+
+    async generateLlamaResponse(prompt) {
+        const llamaClient = new LlamaModelClient();
+        try {
+            const result = await llamaClient.getResponse(prompt);
+            console.log("LLama Model Response:", result);
+            this.conversationHistory.push({ role: 'assistant', content: result });
+            return result;
+        } catch (error) {
+            console.error("Error:", error);
+        }
+    }
+
+    async generateOpenAIResponse(messages, maxTokens) {
+        const { result, prompt_tokens: promptUsed, completion_tokens: completionUsed } = await OpenAIHelper.sendOpenAIRequest(
+            messages, null, maxTokens
+        );
+
+        this.promptTokensUsed += promptUsed;
+        this.completionTokensUsed += completionUsed;
+
+        this.conversationHistory.push({ role: 'assistant', content: result });
+        return result;
     }
 
     updatePrimerMessage(topic) {
