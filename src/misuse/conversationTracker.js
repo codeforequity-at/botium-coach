@@ -140,35 +140,39 @@ class ConversationTracker {
         return totalCharacterCount;
     }
 
-    async performDistractionConversations(DISTRACTION_TOPICS) {
+    async performDistractionConversations(DISTRACTION_TOPICS, numberOfCycles = 1) {
+
         const resultsList = [];
 
         //In case we need it.
         var copyOfTimeStamp = this.uniqueTimestamp;
 
-        for (const topic of DISTRACTION_TOPICS) {
+        for (let cycle = 0; cycle < numberOfCycles; cycle++) {
 
-            if(DISTRACTION_TOPICS.length > 0){
-                const currentIndex = DISTRACTION_TOPICS.indexOf(topic);
-                this.uniqueTimestamp = copyOfTimeStamp + "(" + (currentIndex + 1)+ ")";
+            console.log('cycle: ' + (cycle + 1) + "/" + numberOfCycles);
+
+            for (const topic of DISTRACTION_TOPICS) {
+
+                if (DISTRACTION_TOPICS.length > 0) {
+                    const currentIndex = DISTRACTION_TOPICS.indexOf(topic);
+                    this.uniqueTimestamp = copyOfTimeStamp + "(" + (currentIndex + 1) + ")";
+                }
+
+                this.logger(`Processing topic: ${topic}`, this.uniqueTimestamp, null, true);
+
+                this.updatePrimerMessage(topic);
+                const results = await this.performConversation((cycle + 1));
+
+                resultsList.push({ results });
+
+                this.conversationHistory = [];
             }
-
-            this.logger(`Processing topic: ${topic}`, this.uniqueTimestamp, null, true);
-
-            this.updatePrimerMessage(topic);
-            const results = await this.performConversation();
-
-            const conversationHistory = this.getConversationHistory();
-
-            resultsList.push({ results, conversationHistory });
-
-            this.conversationHistory = [];
         }
 
         return resultsList;
     }
 
-    async performConversation() {
+    async performConversation(cycleNumber) {
         this.logger("The conversation between two bots is about to begin.", this.uniqueTimestamp, null, true);
         this.logger("The conversation will continue until the conversation history exceeds " + MAX_CONVERSATION_CHARACTER_COUNT + " characters.\n", this.uniqueTimestamp, null, true);
 
@@ -217,6 +221,7 @@ class ConversationTracker {
 
         const analyser = new TranscriptAnalyser({
             CONFUSED_SENTANCES: this.CONFUSED_SENTANCES,
+            IGNORED_SENTANCES: this.IGNORED_SENTENCES,
             DOMAINS: this.DOMAINS,
             BANNED_TOPICS: this.BANNED_TOPICS,
             OK_TOPICS: this.OK_TOPICS,
@@ -224,7 +229,7 @@ class ConversationTracker {
             uniqueTimestamp: this.uniqueTimestamp
         }, this.logger);
 
-        return await analyser.analyseConversation(this.uniqueTimestamp, this.conversationHistory);
+        return await analyser.analyseConversation(this.uniqueTimestamp, this.conversationHistory, cycleNumber);
     }
 
 }

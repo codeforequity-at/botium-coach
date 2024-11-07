@@ -2,16 +2,16 @@ const OpenAIHelper = require('./llmProviders/openaiHelper.js');
 const LlamaModelClient = require('./llmProviders/LlamaModelClient.js');
 const Common = require('./common.js');
 const PromptTemplates = require('./prompts.js');
+const TestDataBuilder = require('./testResultBuilder.js');
 
 class TranscriptAnalyser {
-    constructor({ CONFUSED_SENTANCES = [], DOMAINS = [], BANNED_TOPICS = [], OK_TOPICS = [], conversationHistory = [], uniqueTimestamp = null, promptTokensUsed = 0, completionTokensUsed = 0 } = {}, logger) {
+    constructor({ CONFUSED_SENTANCES = [], IGNORED_SENTANCES = [], DOMAINS = [], BANNED_TOPICS = [], OK_TOPICS = [], conversationHistory = [], uniqueTimestamp = null, promptTokensUsed = 0, completionTokensUsed = 0 } = {}, logger) {
         this.promptResults = {
-            gradedResults: null,
-            promptTokensUsed: null,
-            completionTokensUsed: null
+           
         };
 
         this.CONFUSED_SENTANCES = CONFUSED_SENTANCES;
+        this.IGNORED_SENTANCES = IGNORED_SENTANCES;
         this.DOMAINS = DOMAINS;
         this.BANNED_TOPICS = BANNED_TOPICS;
         this.OK_TOPICS = OK_TOPICS;
@@ -59,15 +59,29 @@ class TranscriptAnalyser {
         return [...bannedTopicViolationsAsArray.map(statement => ({ statement, type: 'banned' })), ...outStandingExceptions.map(statement => ({ statement, type: 'out of domain' }))];
     }
 
-    prepareResults(gradedResults) {
-        this.promptResults.gradedResults = gradedResults;
-        this.promptResults.promptTokensUsed = this.promptTokensUsed;
-        this.promptResults.completionTokensUsed = this.completionTokensUsed;
-
-        return this.promptResults;
+    prepareTestResults(result, cycleNumber) {
+        const testDataBuilder = new TestDataBuilder();
+        const customData = {
+            test: { dateCreated: new Date().toISOString() },
+            allowedDomains: this.DOMAINS,
+            approvedTopics: this.OK_TOPICS,
+            confusedSentences: this.CONFUSED_SENTANCES,
+            ignoredSentences: this.IGNORED_SENTANCES,
+            forbiddenTopics: this.BANNED_TOPICS,
+            testResult: { cycleNumber: cycleNumber, status: "in_progress" },
+            transcriptEntries: this.conversationHistory,
+            tokenUsage: [
+                { provider: "GPT-4", metrics: [
+                    { metricName: "promptTokensUsed", metricValue: this.promptTokensUsed },
+                    { metricName: "completionTokensUsed", metricValue: this.completionTokensUsed }
+                ] }
+            ],
+            violationsData: result
+        };
+        return testDataBuilder.buildTestData(customData);
     }
 
-    async analyseConversation(timeStamp, history) {
+    async analyseConversation(timeStamp, history, cycleNumber) {
         this.uniqueTimestamp = timeStamp;
         this.conversationHistory = history;
         this.logger('\nIdentifying misuse. Please be patient...', this.uniqueTimestamp, null, true);
@@ -103,7 +117,8 @@ class TranscriptAnalyser {
             gradedResults = this.removeNonApplicableSeverity(gradedResults);
             this.logResults('Step 6. After removing results with severity of N/A', gradedResults, "ResultBreakdown.txt");
 
-            return this.prepareResults(gradedResults);
+            return this.prepareTestResults(gradedResults, cycleNumber);
+
         } catch (error) {
             console.error("\nError analysing conversation:\n", error);
             return false;
