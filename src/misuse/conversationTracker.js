@@ -1,5 +1,5 @@
-const copilotChatBot = require('./copilot/index.js');
 const OpenAIHelper = require('./llmProviders/openaiHelper.js');
+const { startContainer, stopContainer } = require('./helper');
 const LlamaModelClient = require('./llmProviders/LlamaModelClient.js');
 const { TranscriptAnalyser } = require('./transcriptAnalyser.js');
 const Common = require('./common.js');
@@ -10,6 +10,8 @@ const PromptTemplates = require('./prompts.js');
 
 class ConversationTracker {
     constructor(params, logger) {
+        if(!params.driver) throw new Error("Driver is required for ConversationTracker")
+        this.driver = params.driver
         this.DOMAINS = params.domains || [];
         this.primerMessage = params.primerMessage || { role: 'system', content: '' };
         this.conversationHistory = params.conversationHistory || [];
@@ -93,7 +95,7 @@ class ConversationTracker {
             } else {
                 return await this.generateOpenAIResponse(messages, maxTokens);
             }
-            
+
         } catch (error) {
             console.error('Error:', error.response ? error.response.data : error.message);
             return 'An error occurred while processing your request.';
@@ -176,7 +178,7 @@ class ConversationTracker {
         this.logger("The conversation between two bots is about to begin.", this.uniqueTimestamp, null, true);
         this.logger("The conversation will continue until the conversation history exceeds " + MAX_CONVERSATION_CHARACTER_COUNT + " characters.\n", this.uniqueTimestamp, null, true);
 
-        const copilotContainer = await copilotChatBot.startContainer();
+        const copilotContainer = await startContainer(this.driver);
 
         copilotContainer.UserSays({ messageText: 'Hello Botium Copilot...' });
         const botiumCopilotFirstResponse = await copilotContainer.WaitBotSays();
@@ -235,7 +237,7 @@ class ConversationTracker {
 }
 
 const stop = async (container) => {
-    await copilotChatBot.stopContainer(container);
+    await stopContainer(container);
 }
 
 module.exports = ConversationTracker;
