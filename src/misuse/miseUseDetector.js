@@ -4,9 +4,8 @@ const params = null;
 
 class MisuseDetector {
 
-    constructor(params, distractionTopics, loggingFunction) {
-        this.params = params;
-        this.distractionTopics = distractionTopics;
+    constructor(params, loggingFunction) {
+        this.params = params;       
         this.loggingFunction = loggingFunction;
     }   
 
@@ -16,7 +15,7 @@ class MisuseDetector {
     
         //1 cycle is a conversation that consists of 3,000 characters(both user and assistant messages).
         const resultsList = await conversationTracker.performDistractionConversations(
-            this.distractionTopics,
+            this.params.distractionTopics,
             this.params.numberOfCycles
         );
 
