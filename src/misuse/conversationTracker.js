@@ -11,7 +11,7 @@ const PromptTemplates = require('./prompts.js');
 class ConversationTracker {
     constructor(params, logger) {
         if(!params.driver) throw new Error("Driver is required for ConversationTracker")
-        this.driver = params.driver
+        this.driver = params.driver;
         this.DOMAINS = params.domains || [];
         this.primerMessage = params.primerMessage || { role: 'system', content: '' };
         this.conversationHistory = params.conversationHistory || [];
