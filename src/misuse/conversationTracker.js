@@ -1,5 +1,5 @@
 const OpenAIHelper = require('./llmProviders/openaiHelper.js');
-const { startContainer, stopContainer } = require('./helper');
+const { startContainer, stopContainer } = require('./driverHelper.js');
 const LlamaModelClient = require('./llmProviders/LlamaModelClient.js');
 const { TranscriptAnalyser } = require('./transcriptAnalyser.js');
 const Common = require('./common.js');
