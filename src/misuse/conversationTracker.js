@@ -142,7 +142,7 @@ class ConversationTracker {
         return totalCharacterCount;
     }
 
-    async performDistractionConversations(DISTRACTION_TOPICS, numberOfCycles = 1) {
+    async performDistractionConversations(distractionTopics, numberOfCycles = 1) {
 
         const resultsList = [];
 
@@ -153,17 +153,17 @@ class ConversationTracker {
 
             console.log('cycle: ' + (cycle + 1) + "/" + numberOfCycles);
 
-            for (const topic of DISTRACTION_TOPICS) {
+            for (const topic of distractionTopics) {
 
-                if (DISTRACTION_TOPICS.length > 0) {
-                    const currentIndex = DISTRACTION_TOPICS.indexOf(topic);
+                if (distractionTopics.length > 0) {
+                    const currentIndex = distractionTopics.indexOf(topic);
                     this.uniqueTimestamp = copyOfTimeStamp + "(" + (currentIndex + 1) + ")";
                 }
 
                 this.logger(`Processing topic: ${topic}`, this.uniqueTimestamp, null, true);
 
                 this.updatePrimerMessage(topic);
-                const results = await this.performConversation((cycle + 1));
+                const results = await this.performConversation((cycle + 1), topic);
 
                 resultsList.push({ results });
 
@@ -174,7 +174,7 @@ class ConversationTracker {
         return resultsList;
     }
 
-    async performConversation(cycleNumber) {
+    async performConversation(cycleNumber, distractionTopic) {
         this.logger("The conversation between two bots is about to begin.", this.uniqueTimestamp, null, true);
         this.logger("The conversation will continue until the conversation history exceeds " + MAX_CONVERSATION_CHARACTER_COUNT + " characters.\n", this.uniqueTimestamp, null, true);
 
@@ -200,7 +200,7 @@ class ConversationTracker {
                 conversationHistoryCharacterCount = await this.calculateTotalCharactersInConversation();
 
                 if (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
-                    //Only ask the question if we ar within the limit.
+                    //Only ask the question if we are within the limit.
                     const response = await this.generateResponse(msgToSendToGPT, 500);
                     this.logger("\x1b[95mDistraction Bot: \x1b[0m" + response, this.uniqueTimestamp, null, true);
                     copilotContainer.UserSays({ messageText: response });
@@ -222,6 +222,7 @@ class ConversationTracker {
         }
 
         const analyser = new TranscriptAnalyser({
+            distractionTopic: this.distractionTopic,
             CONFUSED_SENTANCES: this.CONFUSED_SENTANCES,
             IGNORED_SENTANCES: this.IGNORED_SENTENCES,
             DOMAINS: this.DOMAINS,
@@ -231,7 +232,7 @@ class ConversationTracker {
             uniqueTimestamp: this.uniqueTimestamp
         }, this.logger);
 
-        return await analyser.analyseConversation(this.uniqueTimestamp, this.conversationHistory, cycleNumber);
+        return await analyser.analyseConversation(this.uniqueTimestamp, this.conversationHistory, cycleNumber, distractionTopic);
     }
 
 }

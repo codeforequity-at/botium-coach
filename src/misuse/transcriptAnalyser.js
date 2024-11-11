@@ -5,16 +5,25 @@ const PromptTemplates = require('./prompts.js');
 const TestDataBuilder = require('./testResultBuilder.js');
 
 class TranscriptAnalyser {
-    constructor({ CONFUSED_SENTANCES = [], IGNORED_SENTANCES = [], DOMAINS = [], BANNED_TOPICS = [], OK_TOPICS = [], conversationHistory = [], uniqueTimestamp = null, promptTokensUsed = 0, completionTokensUsed = 0 } = {}, logger) {
-        this.promptResults = {
-           
-        };
-
-        this.CONFUSED_SENTANCES = CONFUSED_SENTANCES;
-        this.IGNORED_SENTANCES = IGNORED_SENTANCES;
-        this.DOMAINS = DOMAINS;
-        this.BANNED_TOPICS = BANNED_TOPICS;
-        this.OK_TOPICS = OK_TOPICS;
+    constructor({ 
+        distractionTopic = "", 
+        CONFUSED_SENTANCES: confusedSentances = [], 
+        IGNORED_SENTANCES: ignoredSentances = [], 
+        DOMAINS: domains = [], 
+        BANNED_TOPICS: bannedTopic = [], 
+        OK_TOPICS: okTopics = [], 
+        conversationHistory = [], 
+        uniqueTimestamp = null, promptTokensUsed = 0, 
+        completionTokensUsed = 0 
+    } = {}, logger) 
+    {
+        this.promptResults = {};
+        this.distrctionTopic = distractionTopic;
+        this.confusedSentances = confusedSentances;
+        this.ignoredSentances = ignoredSentances;
+        this.domains = domains;
+        this.bannedTopics = bannedTopic;
+        this.okTopics = okTopics;
         this.conversationHistory = conversationHistory;
         this.uniqueTimestamp = uniqueTimestamp;
         this.promptTokensUsed = promptTokensUsed;
@@ -32,7 +41,6 @@ class TranscriptAnalyser {
             console.error('Error fetching banned topics:', error);
         }
 
-        // Fallback to an empty array if undefined
         if (!Array.isArray(bannedTopicViolationsAsArray)) {
             bannedTopicViolationsAsArray = [];
         }
@@ -42,7 +50,7 @@ class TranscriptAnalyser {
 
     async filterOutOkTopicViolations(nonDomainViolations, bannedTopicViolationsAsArray) {
         var violationsExceptTopicsThatAreOkArray = [];
-        if (this.OK_TOPICS.length > 0) {
+        if (this.okTopics.length > 0) {
             if (nonDomainViolations.length > 0) {
                 violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainViolations);
                 this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, "ResultBreakdown.txt");
@@ -59,15 +67,15 @@ class TranscriptAnalyser {
         return [...bannedTopicViolationsAsArray.map(statement => ({ statement, type: 'banned' })), ...outStandingExceptions.map(statement => ({ statement, type: 'out of domain' }))];
     }
 
-    prepareTestResults(result, cycleNumber) {
+    prepareTestResults(result, cycleNumber, distractionTopic) {
         const testDataBuilder = new TestDataBuilder();
         const customData = {
             test: { dateCreated: new Date().toISOString() },
-            allowedDomains: this.DOMAINS,
-            approvedTopics: this.OK_TOPICS,
-            confusedSentences: this.CONFUSED_SENTANCES,
-            ignoredSentences: this.IGNORED_SENTANCES,
-            forbiddenTopics: this.BANNED_TOPICS,
+            allowedDomains: this.domains,
+            approvedTopics: this.okTopics,
+            confusedSentences: this.confusedSentances,
+            ignoredSentences: this.ignoredSentances,
+            forbiddenTopics: this.bannedTopics,
             testResult: { cycleNumber: cycleNumber, status: "in_progress" },
             transcriptEntries: this.conversationHistory,
             tokenUsage: [
@@ -76,21 +84,22 @@ class TranscriptAnalyser {
                     { metricName: "completionTokensUsed", metricValue: this.completionTokensUsed }
                 ] }
             ],
-            violationsData: result
+            violationsData: result,
+            distractionTopic: distractionTopic
         };
         return testDataBuilder.buildTestData(customData);
     }
 
-    async analyseConversation(timeStamp, history, cycleNumber) {
+    async analyseConversation(timeStamp, history, cycleNumber, distractionTopic) {
         this.uniqueTimestamp = timeStamp;
         this.conversationHistory = history;
         this.logger('\nIdentifying misuse. Please be patient...', this.uniqueTimestamp, null, true);
 
         this.logger('Analysing with the following settings....', this.uniqueTimestamp);
-        this.logger('Banned Topics: ' + JSON.stringify(this.BANNED_TOPICS), this.uniqueTimestamp);
-        this.logger('Domains: ' + JSON.stringify(this.DOMAINS), this.uniqueTimestamp);
-        this.logger('OK Topics: ' + JSON.stringify(this.OK_TOPICS), this.uniqueTimestamp);
-        this.logger('Confused Sentences: ' + JSON.stringify(this.CONFUSED_SENTANCES), this.uniqueTimestamp);
+        this.logger('Banned Topics: ' + JSON.stringify(this.bannedTopics), this.uniqueTimestamp);
+        this.logger('Domains: ' + JSON.stringify(this.domains), this.uniqueTimestamp);
+        this.logger('OK Topics: ' + JSON.stringify(this.okTopics), this.uniqueTimestamp);
+        this.logger('Confused Sentences: ' + JSON.stringify(this.confusedSentances), this.uniqueTimestamp);
         this.logger('', this.uniqueTimestamp);
 
         try {
@@ -117,7 +126,7 @@ class TranscriptAnalyser {
             gradedResults = this.removeNonApplicableSeverity(gradedResults);
             this.logResults('Step 6. After removing results with severity of N/A', gradedResults, "ResultBreakdown.txt");
 
-            return this.prepareTestResults(gradedResults, cycleNumber);
+            return this.prepareTestResults(gradedResults, cycleNumber, distractionTopic);
 
         } catch (error) {
             console.error("\nError analysing conversation:\n", error);
@@ -194,8 +203,8 @@ class TranscriptAnalyser {
 
     async gradeVolation(violation, history) {
 
-        var domain = this.commonInstance.formatTopicList(this.DOMAINS, true)
-        var bannedTopics = this.commonInstance.formatTopicList(this.BANNED_TOPICS, true)
+        var domain = this.commonInstance.formatTopicList(this.domains, true)
+        var bannedTopics = this.commonInstance.formatTopicList(this.bannedTopics, true)
 
         let historyCopy = [...history];
 
@@ -334,7 +343,7 @@ class TranscriptAnalyser {
     async identifyBannedTopics() {
         this.logger('Identifying if the LLM discussed banned topics...', this.uniqueTimestamp);
         var result = await this.analyzeBannedTopics(
-            this.conversationHistory, this.BANNED_TOPICS, this.commonInstance.formatBulletList
+            this.conversationHistory, this.bannedTopics, this.commonInstance.formatBulletList
         );
         this.logger('Found banned topics(below)', this.uniqueTimestamp);
         this.logger(result, this.uniqueTimestamp);
@@ -346,7 +355,7 @@ class TranscriptAnalyser {
     async identifyNonDomainViolations() {
         this.logger('Identifying if the LLM discussed topics outside of the domain...', this.uniqueTimestamp);
 
-        var result = await this.analyzeNonDomainResults(this.DOMAINS, this.sendRequestAndUpdateTokens.bind(this));
+        var result = await this.analyzeNonDomainResults(this.domains, this.sendRequestAndUpdateTokens.bind(this));
 
         this.logger('Found violations outside of domain: ', this.uniqueTimestamp);
         this.logger(result, this.uniqueTimestamp);
@@ -361,7 +370,7 @@ class TranscriptAnalyser {
         this.logger('Excluding topics that were marked as OK...', this.uniqueTimestamp);
         this.logger('Before excluding ok topics \n' + results, this.uniqueTimestamp);
         result = await this.excludeOKTopicViolations(
-            this.OK_TOPICS, this.commonInstance.formatTopicList, results
+            this.okTopics, this.commonInstance.formatTopicList, results
         );
 
         return result;

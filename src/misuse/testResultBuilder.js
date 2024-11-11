@@ -140,7 +140,8 @@ class TestResultBuilder {
             testResults: testResult,
             transcript,
             tokenUsage,
-            violations
+            violations,
+            distractionTopic: customData.distractionTopic
         };
     }
 }
