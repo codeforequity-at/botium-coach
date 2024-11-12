@@ -1,6 +1,6 @@
 module.exports = {
-    "extends": "standard",
-    "env": {
-        "mocha": true
-    }
-};
+  extends: 'standard',
+  env: {
+    mocha: true
+  }
+}

@@ -230,7 +230,7 @@ class TranscriptAnalyser {
       content: promptToUse
     })
 
-    var response = await this.callGradeResultsWithRetries.call(this, priorMessages);
+    const response = await this.callGradeResultsWithRetries(priorMessages)
 
     const responseObject = {
       statement: violation.statement
@@ -247,8 +247,7 @@ class TranscriptAnalyser {
     return responseObject
   }
 
-  async callGradeResultsWithRetries(historyCopy, maxRetries = 5) {
-    
+  async callGradeResultsWithRetries (historyCopy, maxRetries = 5) {
     let attempts = 0
     let response
 
@@ -266,8 +265,8 @@ class TranscriptAnalyser {
     }
 
     console.log(`Failed to grade results after ${maxRetries} attempts.`)
-    //console.log('maxRetries', maxRetries)
-    //console.log('historyCopy', historyCopy)
+    // console.log('maxRetries', maxRetries)
+    // console.log('historyCopy', historyCopy)
 
     throw new Error('Failed to grade results...')
   }
