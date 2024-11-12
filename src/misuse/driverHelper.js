@@ -1,4 +1,4 @@
-const startContainer = async (driver) => {
+const startContainer = async (driver, logger) => {
   driver.BuildCompiler()
   const container = await driver.Build()
   try {
@@ -6,31 +6,30 @@ const startContainer = async (driver) => {
     return container
   } catch (err) {
     try {
-      await scriptingContext.scriptingEvents.onConvoEnd({ container })
       await container.Stop()
     } catch (err) {
-      logToFile(`Conversation Stop failed: ${err}`)
+      logger(`Conversation Stop failed: ${err}`)
     }
     try {
       await container.Clean()
     } catch (err) {
-      logToFile(`Conversation Clean failed: ${err}`)
+      logger(`Conversation Clean failed: ${err}`)
     }
     throw new Error(`Failed to start new conversation: ${err.message}`)
   }
 }
 
-const stopContainer = async (container) => {
+const stopContainer = async (container, logger) => {
   if (container) {
     try {
       await container.Stop()
     } catch (err) {
-      logToFile(`Conversation Stop failed: ${err}`)
+      logger(`Conversation Stop failed: ${err}`)
     }
     try {
       await container.Clean()
     } catch (err) {
-      logToFile(`Conversation Clean failed: ${err}`)
+      logger(`Conversation Clean failed: ${err}`)
     }
   }
 }
