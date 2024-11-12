@@ -12,7 +12,7 @@ class ConversationTracker {
   constructor (params, logger) {
     if (!params.driver) throw new Error('Driver is required for ConversationTracker')
     this.driver = params.driver
-    this.DOMAINS = params.domains || []
+    this.allowedDomains = params.allowedDomains || []
     this.primerMessage = params.primerMessage || { role: 'system', content: '' }
     this.conversationHistory = params.conversationHistory || []
     this.IGNORED_SENTENCES = params.ignoredSentences || []
@@ -20,8 +20,8 @@ class ConversationTracker {
     this.promptTokensUsed = params.promptTokensUsed || 0
     this.completionTokensUsed = params.completionTokensUsed || 0
     this.CONFUSED_SENTANCES = params.confusedSentences || []
-    this.BANNED_TOPICS = params.bannedTopics || []
-    this.OK_TOPICS = params.okTopics || []
+    this.BANNED_TOPICS = params.forbiddenTopics || []
+    this.approvedTopics = params.approvedTopics || []
     this.logger = logger
     this.commonInstance = new Common(this.logger)
   }
@@ -127,7 +127,7 @@ class ConversationTracker {
   updatePrimerMessage (topic) {
     this.primerMessage.content = PromptTemplates.DISTRCATION_PROMPT(topic)
       .replace(/{DISTRACTION}/g, topic)
-      .replace(/{DOMAIN}/g, this.DOMAINS[0])
+      .replace(/{DOMAIN}/g, this.allowedDomains[0])
 
     this.logger('PROMPT: \n ' + this.primerMessage.content + '\n \n No response as there will be multiple...', this.uniqueTimestamp, 'DistractionPrompt.txt')
   }
@@ -189,7 +189,7 @@ class ConversationTracker {
 
         const msgToSendToGPT = message.messageText
 
-        this.logger('\x1b[36m' + this.DOMAINS[0].charAt(0).toUpperCase() + this.DOMAINS[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToGPT + '\n', this.uniqueTimestamp, null, true)
+        this.logger('\x1b[36m' + this.allowedDomains[0].charAt(0).toUpperCase() + this.allowedDomains[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToGPT + '\n', this.uniqueTimestamp, null, true)
 
         conversationHistoryCharacterCount = await this.calculateTotalCharactersInConversation()
 
@@ -218,9 +218,9 @@ class ConversationTracker {
       distractionTopic: this.distractionTopic,
       CONFUSED_SENTANCES: this.CONFUSED_SENTANCES,
       IGNORED_SENTANCES: this.IGNORED_SENTENCES,
-      DOMAINS: this.DOMAINS,
+      DOMAINS: this.allowedDomains,
       BANNED_TOPICS: this.BANNED_TOPICS,
-      OK_TOPICS: this.OK_TOPICS,
+      OK_TOPICS: this.approvedTopics,
       conversationHistory: this.conversationHistory,
       uniqueTimestamp: this.uniqueTimestamp
     }, this.logger)

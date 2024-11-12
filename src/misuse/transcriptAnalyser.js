@@ -11,7 +11,7 @@ class TranscriptAnalyser {
     IGNORED_SENTANCES: ignoredSentances = [],
     DOMAINS: domains = [],
     BANNED_TOPICS: bannedTopic = [],
-    OK_TOPICS: okTopics = [],
+    OK_TOPICS: approvedTopics = [],
     conversationHistory = [],
     uniqueTimestamp = null, promptTokensUsed = 0,
     completionTokensUsed = 0
@@ -20,9 +20,9 @@ class TranscriptAnalyser {
     this.distrctionTopic = distractionTopic
     this.confusedSentances = confusedSentances
     this.ignoredSentances = ignoredSentances
-    this.domains = domains
-    this.bannedTopics = bannedTopic
-    this.okTopics = okTopics
+    this.allowedDomains = domains
+    this.forbiddenTopics = bannedTopic
+    this.approvedTopics = approvedTopics
     this.conversationHistory = conversationHistory
     this.uniqueTimestamp = uniqueTimestamp
     this.promptTokensUsed = promptTokensUsed
@@ -49,7 +49,7 @@ class TranscriptAnalyser {
 
   async filterOutOkTopicViolations (nonDomainViolations, bannedTopicViolationsAsArray) {
     let violationsExceptTopicsThatAreOkArray = []
-    if (this.okTopics.length > 0) {
+    if (this.approvedTopics.length > 0) {
       if (nonDomainViolations.length > 0) {
         violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainViolations)
         this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, 'ResultBreakdown.txt')
@@ -69,11 +69,11 @@ class TranscriptAnalyser {
     const testDataBuilder = new TestDataBuilder()
     const customData = {
       test: { dateCreated: new Date().toISOString() },
-      allowedDomains: this.domains,
-      approvedTopics: this.okTopics,
+      allowedDomains: this.allowedDomains,
+      approvedTopics: this.approvedTopics,
       confusedSentences: this.confusedSentances,
       ignoredSentences: this.ignoredSentances,
-      forbiddenTopics: this.bannedTopics,
+      forbiddenTopics: this.forbiddenTopics,
       testResult: { cycleNumber, status: 'in_progress' },
       transcriptEntries: this.conversationHistory,
       tokenUsage: [
@@ -97,9 +97,9 @@ class TranscriptAnalyser {
     this.logger('\nIdentifying misuse. Please be patient...', this.uniqueTimestamp, null, true)
 
     this.logger('Analysing with the following settings....', this.uniqueTimestamp)
-    this.logger('Banned Topics: ' + JSON.stringify(this.bannedTopics), this.uniqueTimestamp)
-    this.logger('Domains: ' + JSON.stringify(this.domains), this.uniqueTimestamp)
-    this.logger('OK Topics: ' + JSON.stringify(this.okTopics), this.uniqueTimestamp)
+    this.logger('Banned Topics: ' + JSON.stringify(this.forbiddenTopics), this.uniqueTimestamp)
+    this.logger('Domains: ' + JSON.stringify(this.allowedDomains), this.uniqueTimestamp)
+    this.logger('OK Topics: ' + JSON.stringify(this.approvedTopics), this.uniqueTimestamp)
     this.logger('Confused Sentences: ' + JSON.stringify(this.confusedSentances), this.uniqueTimestamp)
     this.logger('', this.uniqueTimestamp)
 
@@ -202,8 +202,8 @@ class TranscriptAnalyser {
   }
 
   async gradeVolation (violation, history) {
-    const domain = this.commonInstance.formatTopicList(this.domains, true)
-    const bannedTopics = this.commonInstance.formatTopicList(this.bannedTopics, true)
+    const domain = this.commonInstance.formatTopicList(this.allowedDomains, true)
+    const forbiddenTopics = this.commonInstance.formatTopicList(this.forbiddenTopics, true)
 
     const historyCopy = [...history]
 
@@ -220,7 +220,7 @@ class TranscriptAnalyser {
     let promptToUse = null
 
     if (violation.type === 'banned') {
-      promptToUse = PromptTemplates.GRADING_VIOLATIONS_BANNED_TOPIC(violation.statement, bannedTopics)
+      promptToUse = PromptTemplates.GRADING_VIOLATIONS_BANNED_TOPIC(violation.statement, forbiddenTopics)
     } else if (violation.type === 'out of domain') {
       promptToUse = PromptTemplates.GRADING_VIOLATIONS_OUT_OF_DOMAIN(violation.statement, domain)
     }
@@ -230,7 +230,7 @@ class TranscriptAnalyser {
       content: promptToUse
     })
 
-    const response = await this.callGradeResultsWithRetries(this, priorMessages)
+    var response = await this.callGradeResultsWithRetries.call(this, priorMessages);
 
     const responseObject = {
       statement: violation.statement
@@ -247,7 +247,8 @@ class TranscriptAnalyser {
     return responseObject
   }
 
-  async callGradeResultsWithRetries (historyCopy, maxRetries = 5) {
+  async callGradeResultsWithRetries(historyCopy, maxRetries = 5) {
+    
     let attempts = 0
     let response
 
@@ -265,6 +266,8 @@ class TranscriptAnalyser {
     }
 
     console.log(`Failed to grade results after ${maxRetries} attempts.`)
+    //console.log('maxRetries', maxRetries)
+    //console.log('historyCopy', historyCopy)
 
     throw new Error('Failed to grade results...')
   }
@@ -337,7 +340,7 @@ class TranscriptAnalyser {
   async identifyBannedTopics () {
     this.logger('Identifying if the LLM discussed banned topics...', this.uniqueTimestamp)
     const result = await this.analyzeBannedTopics(
-      this.conversationHistory, this.bannedTopics, this.commonInstance.formatBulletList
+      this.conversationHistory, this.forbiddenTopics, this.commonInstance.formatBulletList
     )
     this.logger('Found banned topics(below)', this.uniqueTimestamp)
     this.logger(result, this.uniqueTimestamp)
@@ -349,7 +352,7 @@ class TranscriptAnalyser {
   async identifyNonDomainViolations () {
     this.logger('Identifying if the LLM discussed topics outside of the domain...', this.uniqueTimestamp)
 
-    const result = await this.analyzeNonDomainResults(this.domains, this.sendRequestAndUpdateTokens.bind(this))
+    const result = await this.analyzeNonDomainResults(this.allowedDomains, this.sendRequestAndUpdateTokens.bind(this))
 
     this.logger('Found violations outside of domain: ', this.uniqueTimestamp)
     this.logger(result, this.uniqueTimestamp)
@@ -363,7 +366,7 @@ class TranscriptAnalyser {
     this.logger('Excluding topics that were marked as OK...', this.uniqueTimestamp)
     this.logger('Before excluding ok topics \n' + results, this.uniqueTimestamp)
     result = await this.excludeOKTopicViolations(
-      this.okTopics, this.commonInstance.formatTopicList, results
+      this.approvedTopics, this.commonInstance.formatTopicList, results
     )
 
     return result
