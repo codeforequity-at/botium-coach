@@ -410,7 +410,13 @@ class TranscriptAnalyser {
         this.logger('PROMPT: \n ' + bannedTopicsPrompt, this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
         this.logger(historyMsg, this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
         this.logger('\n \nGPT-4 RESPONSE: \n' + violationIndicies, this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
-        this.logger('\n \nGPT-4 RESPONSE: \n' + results, this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
+
+        if ((results === null || results.length === 0) && (!(historyMsg === null || historyMsg.length === 0))) {
+          this.logger('All messages found actually belong to the assistant!', this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
+          return null
+        } else {
+          this.logger('\n \nGPT-4 RESPONSE: \n' + results, this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
+        }
 
         return results
       }

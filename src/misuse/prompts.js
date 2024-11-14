@@ -131,16 +131,16 @@ class PromptTemplates {
 
   static BANNED_TOPICS_PROMPT (forbiddenTopics, formatBulletList) {
     return `
-            Given a transcript and a list of banned topics, identify each user message that contains a sentence referring to any banned topic from the list: ${formatBulletList(forbiddenTopics)}.
+                Given a transcript and a list of banned topics, identify each user message (with "Role: user") that contains any mention of a banned topic from the list: ${formatBulletList(forbiddenTopics)}.
     
-            A user message is a violation if it contains any sentence that directly or indirectly refers to a banned topic. Strictly match messages that contain or allude to banned topics, even if briefly.
+                A user message is a violation if it contains any sentence that directly or indirectly refers to a banned topic, regardless of context or sentiment (even if the mention is positive, neutral, or preventative). Only user messages with "Role: user" should be checked. Ignore all messages with "Role: assistant."
     
-            For each violating user message, return only its position number in the overall sequence as a comma-separated list (e.g., "1, 3, 5" for the first, third, and fifth messages), counting each message sequentially regardless of whether it is from the user or assistant.
-            
-            Do not quote or paraphrase any part of the message itself.
+                For each violating user message, return only its position number in the sequence of user messages as a comma-separated list (e.g., "1, 3, 5" for the first, third, and fifth user messages).
     
-            If no violating messages are found, leave the output blank.
-        `
+                Do not quote or paraphrase any part of the message itself.
+    
+                If no violating user messages are found, leave the output blank.
+            `
   }
 }
 
