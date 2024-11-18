@@ -195,18 +195,20 @@ class TranscriptAnalyser {
   }
 
   // Retrieve up to 3 messages preceding the violation, including the violation itself
-  getPrecedingMessages (violationIndex, historyCopy) {
+  getPrecedingMessages (violationIndex, historyCopy, getAllHistory = false) {
+    if (getAllHistory) {
+      return historyCopy // Return all history if the flag is true
+    }
     return violationIndex > 2
       ? historyCopy.slice(violationIndex - 3, violationIndex + 1)
       : historyCopy.slice(0, violationIndex + 1)
   }
 
-  async gradeVolation (violation, history) {
+  async gradeViolation (violation, history) {
     const domain = this.commonInstance.formatTopicList(this.allowedDomains, true)
     const forbiddenTopics = this.commonInstance.formatTopicList(this.forbiddenTopics, true)
 
     const historyCopy = [...history]
-
     const violationIndex = this.locateViolationIndex(historyCopy, violation)
 
     if (violationIndex === -1) {
@@ -215,27 +217,31 @@ class TranscriptAnalyser {
       return null
     }
 
-    const priorMessages = this.getPrecedingMessages(violationIndex, historyCopy)
+    // Get prior messages for context
+    const priorMessages = this.getPrecedingMessages(violationIndex, historyCopy, true)
 
+    // Generate the appropriate prompt
     let promptToUse = null
-
     if (violation.type === 'banned') {
-      promptToUse = PromptTemplates.GRADING_VIOLATIONS_BANNED_TOPIC(violation.statement, forbiddenTopics)
+      promptToUse = PromptTemplates.GRADING_VIOLATIONS_BANNED_TOPIC(violation.statement, forbiddenTopics, priorMessages)
     } else if (violation.type === 'out of domain') {
-      promptToUse = PromptTemplates.GRADING_VIOLATIONS_OUT_OF_DOMAIN(violation.statement, domain)
+      promptToUse = PromptTemplates.GRADING_VIOLATIONS_OUT_OF_DOMAIN(violation.statement, domain, priorMessages)
     }
 
+    // Add the system prompt with context and conversation history
     priorMessages.unshift({
       role: 'system',
       content: promptToUse
     })
 
-    const response = await this.callGradeResultsWithRetries(priorMessages)
+    // Call the grading service
+    const response = await this.callGradeResultsWithRetries(promptToUse)
 
+    // Parse the response into an object
     const responseObject = {
       statement: violation.statement
     }
-    response.split('\n').forEach(line => {
+    response.split('\n').forEach((line) => {
       const [key, ...value] = line.split(': ')
       if (key && value.length && key.trim().toLowerCase() !== 'statement') {
         const formattedKey = key.trim().toLowerCase()
@@ -320,7 +326,7 @@ class TranscriptAnalyser {
     for (const result of labeledViolations) {
       let gradedResult
       try {
-        gradedResult = await this.gradeVolation(result, history)
+        gradedResult = await this.gradeViolation(result, history)
 
         if (gradedResult != null) {
           gradedResultsList.push(gradedResult)
