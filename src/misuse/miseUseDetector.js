@@ -19,4 +19,4 @@ class MisuseDetector {
   }
 }
 
-module.exports = { MisuseDetector }
+module.exports = MisuseDetector
