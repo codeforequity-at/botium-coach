@@ -5,7 +5,7 @@ const { TranscriptAnalyser } = require('./transcriptAnalyser.js')
 const Common = require('./common.js')
 
 const MAX_HISTORY_TURNS = process.env.MAX_CONVERSATION_TURNS
-const MAX_CONVERSATION_CHARACTER_COUNT = process.env.MAX_CONVERSATION_CHARACTER_COUNT
+const MAX_CONVERSATION_CHARACTER_COUNT = process.env.MAX_CONVERSATION_CHARACTER_COUNT || 3000
 const PromptTemplates = require('./prompts.js')
 
 class ConversationTracker {
