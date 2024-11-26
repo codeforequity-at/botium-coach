@@ -7,15 +7,15 @@ class OpenAIHelper {
       messages = [{ role: 'user', content: messages }]
     }
 
-    const model = process.env.OPENAI_API_MODEL || 'gpt-4'
+    const model = process.env.OPENAI_API_MODEL || 'o1-preview'
     const maxTokens = 500
 
     const gptQueriesRequest = {
       model,
       messages,
       max_tokens: maxTokens,
-      temperature: parseFloat(process.env.TEMPERATURE) || 0.1,
-      top_p: parseFloat(process.env.TOP_P) || 0.99
+      temperature: parseFloat(process.env.TEMPERATURE) || 0,
+      top_p: parseFloat(process.env.TOP_P) || 1
     }
 
     try {

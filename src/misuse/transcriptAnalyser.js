@@ -96,6 +96,7 @@ class TranscriptAnalyser {
     this.conversationHistory = history
     this.logger('\nIdentifying misuse. Please be patient...', this.uniqueTimestamp, null, true)
 
+    this.logger('Remove this log....', this.uniqueTimestamp)
     this.logger('Analysing with the following settings....', this.uniqueTimestamp)
     this.logger('Banned Topics: ' + JSON.stringify(this.forbiddenTopics), this.uniqueTimestamp)
     this.logger('Domains: ' + JSON.stringify(this.allowedDomains), this.uniqueTimestamp)
