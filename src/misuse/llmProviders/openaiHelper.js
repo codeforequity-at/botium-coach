@@ -7,7 +7,7 @@ class OpenAIHelper {
       messages = [{ role: 'user', content: messages }]
     }
 
-    const model = process.env.OPENAI_API_MODEL || 'o1-preview'
+    const model = process.env.OPENAI_API_MODEL || 'gpt-4'
     const maxTokens = 500
 
     const gptQueriesRequest = {
