@@ -52,6 +52,9 @@ class TranscriptAnalyser {
     if (this.approvedTopics.length > 0) {
       if (nonDomainViolations.length > 0) {
         violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainViolations)
+
+        // console.log('\nviolationsExceptTopicsThatAreOkArray', violationsExceptTopicsThatAreOkArray)
+
         this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, 'ResultBreakdown.txt')
       }
     } else {
@@ -114,10 +117,10 @@ class TranscriptAnalyser {
       this.logResults('Step 2. Out of domain violations', nonDomainViolations, 'ResultBreakdown.txt')
 
       // Step 3. Filtering out any references to topics that are deemed OK.
-      const outStandingExceptions = await this.filterOutOkTopicViolations(nonDomainViolations, bannedtopicViolations)
+      const confirmedViolations = await this.filterOutOkTopicViolations(nonDomainViolations, bannedtopicViolations)
 
       // Step 4. Grade the results that have now been categorised(each one is done individualy).
-      let gradedResults = await this.gradeCatergorisedResults(outStandingExceptions, history)
+      let gradedResults = await this.gradeViolations(confirmedViolations, history)
       this.logResults('Step 4. After grading the categorised results', gradedResults, 'ResultBreakdown.txt')
 
       // Step 5. Removing any duplicates that might exist.
@@ -214,44 +217,139 @@ class TranscriptAnalyser {
 
     if (violationIndex === -1) {
       console.error('Violation statement not found in history:', violation.statement)
-      console.error('Here is the history:', historyCopy)
       return null
     }
 
     // Get prior messages for context
     const priorMessages = this.getPrecedingMessages(violationIndex, historyCopy, true)
 
-    // Generate the appropriate prompt
-    let promptToUse = null
+    // Step 1: Detection
+    let detectionSystemPrompt
     if (violation.type === 'banned') {
-      promptToUse = PromptTemplates.GRADING_VIOLATIONS_BANNED_TOPIC(violation.statement, forbiddenTopics, priorMessages)
+      detectionSystemPrompt = PromptTemplates.DETECT_BANNED_TOPIC_SYSTEM(violation.statement, forbiddenTopics, priorMessages)
     } else if (violation.type === 'out of domain') {
-      promptToUse = PromptTemplates.GRADING_VIOLATIONS_OUT_OF_DOMAIN(violation.statement, domain, priorMessages)
+      detectionSystemPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_SYSTEM(violation.statement, domain, priorMessages)
     }
 
-    // Add the system prompt with context and conversation history
-    priorMessages.unshift({
-      role: 'system',
-      content: promptToUse
-    })
-
-    // Call the grading service
-    const response = await this.callGradeResultsWithRetries(promptToUse)
-
-    // Parse the response into an object
-    const responseObject = {
-      statement: violation.statement
+    let detectionUserPrompt
+    if (violation.type === 'banned') {
+      detectionUserPrompt = PromptTemplates.DETECT_BANNED_TOPIC_USER(violation.statement, forbiddenTopics, priorMessages)
+    } else if (violation.type === 'out of domain') {
+      detectionUserPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_USER(violation.statement, domain, priorMessages)
     }
-    response.split('\n').forEach((line) => {
-      const [key, ...value] = line.split(': ')
-      if (key && value.length && key.trim().toLowerCase() !== 'statement') {
-        const formattedKey = key.trim().toLowerCase()
-        const formattedValue = value.join(': ').trim().replace(/^"|"$/g, '')
-        responseObject[formattedKey] = formattedValue
+
+    const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'DetectionPrompt.txt')
+
+    // Parse detection response
+    const confirmedViolation = this.parseDetectionResponse(detectionResponse)
+
+    if (!confirmedViolation || confirmedViolation.deviation !== 'YES') {
+      return null // No violation detected
+    }
+
+    // Step 2: Classification
+    let classificationPromptSystem
+    let classificationPromptUser
+    if (violation.type === 'banned') {
+      classificationPromptSystem = PromptTemplates.CLASSIFY_BANNED_SEVERITY_SYSTEM(
+        violation.statement,
+        forbiddenTopics,
+        detectionResponse,
+        priorMessages
+      )
+      classificationPromptUser = PromptTemplates.CLASSIFY_BANNED_SEVERITY_USER(
+        violation.statement,
+        forbiddenTopics,
+        detectionResponse,
+        priorMessages
+      )
+    } else if (violation.type === 'out of domain') {
+      classificationPromptSystem = PromptTemplates.CLASSIFY_DOMAIN_SEVERITY_SYSTEM(
+        violation.statement,
+        domain,
+        detectionResponse,
+        priorMessages
+      )
+      classificationPromptUser = PromptTemplates.CLASSIFY_DOMAIN_SEVERITY_USER(
+        violation.statement,
+        domain,
+        detectionResponse,
+        priorMessages
+      )
+    }
+    const classificationResponse = await this.sendRequestWithLogging(
+      classificationPromptSystem,
+      classificationPromptUser,
+      'ClassificationPrompt.txt'
+    )
+
+    // Parse classification response
+    const classificationResult = this.parseClassificationResponse(classificationResponse, violation.statement, confirmedViolation.context)
+
+    // Improve reasoning
+
+    const reasoningResponse = await this.sendRequestWithLogging(
+      PromptTemplates.REASONING_PROMPT_SYSTEM(),
+      PromptTemplates.REASONING_PROMPT_USER(classificationResult),
+      'ReasoningPrompt.txt'
+    )
+
+    classificationResult.reason = reasoningResponse
+
+    return classificationResult
+  }
+
+  parseDetectionResponse (response) {
+    try {
+      const lines = response.split('\n')
+      const statement = lines.find((line) => line.trimStart().startsWith('Statement'))?.split(': ')[1]?.replace(/^"|"$/g, '')
+      const context = lines.find((line) => line.trimStart().startsWith('Context'))?.split(': ')[1]?.replace(/^"|"$/g, '')
+      const deviation = lines.find((line) => line.trimStart().startsWith('Deviation'))?.split(': ')[1]
+
+      return {
+        statement,
+        context,
+        deviation
       }
-    })
+    } catch (error) {
+      console.error('Error parsing detection response:', error)
+      return null
+    }
+  }
 
-    return responseObject
+  parseReasoningResponse (response) {
+    try {
+      // Extract the JSON part from the response string
+      const jsonStartIndex = response.indexOf('{')
+      const jsonEndIndex = response.lastIndexOf('}')
+
+      if (jsonStartIndex === -1 || jsonEndIndex === -1) {
+        throw new Error('No JSON found in the response')
+      }
+
+      const jsonString = response.slice(jsonStartIndex, jsonEndIndex + 1)
+
+      // Parse the extracted JSON string into an object
+      const parsedObject = JSON.parse(jsonString)
+
+      return parsedObject
+    } catch (error) {
+      console.error('Failed to parse reasoning response:', error.message)
+      return null // Or handle error appropriately
+    }
+  }
+
+  parseClassificationResponse (response, statement, context) {
+    try {
+      const lines = response.split('\n').map(line => line.trim()) // Trim each line
+      const severity = lines.find((line) => line.startsWith('Severity'))?.split(': ')[1]
+      const reason = lines.find((line) => line.startsWith('Reason'))?.split(': ')[1]
+      const category = lines.find((line) => line.startsWith('Category'))?.split(': ')[1]
+      return { statement, severity, reason, category, context }
+    } catch (error) {
+      console.error('Error parsing classification response:', error)
+      return null
+    }
   }
 
   async callGradeResultsWithRetries (historyCopy, maxRetries = 5) {
@@ -272,8 +370,6 @@ class TranscriptAnalyser {
     }
 
     console.log(`Failed to grade results after ${maxRetries} attempts.`)
-    // console.log('maxRetries', maxRetries)
-    // console.log('historyCopy', historyCopy)
 
     throw new Error('Failed to grade results...')
   }
@@ -318,19 +414,19 @@ class TranscriptAnalyser {
     return finalResults
   }
 
-  async gradeCatergorisedResults (labeledViolations, history) {
+  async gradeViolations (violations, history) {
     this.logger('Grading results: \n', this.uniqueTimestamp)
-    this.logger(labeledViolations, this.uniqueTimestamp)
+    this.logger(violations, this.uniqueTimestamp)
 
     const gradedResultsList = []
 
-    for (const result of labeledViolations) {
-      let gradedResult
+    for (const violation of violations) {
+      let gradedViolation
       try {
-        gradedResult = await this.gradeViolation(result, history)
+        gradedViolation = await this.gradeViolation(violation, history)
 
-        if (gradedResult != null) {
-          gradedResultsList.push(gradedResult)
+        if (gradedViolation != null) {
+          gradedResultsList.push(gradedViolation)
         }
       } catch (error) {
         console.error('Error grading violation, so ignoring it...', error)
@@ -395,7 +491,14 @@ class TranscriptAnalyser {
     const outOfOdmainResultsAsSring = nonDomainViolations.map((violation, index) => `${index + 1}. ${violation}`).join('\n')
     let violationIndices = await this.sendRequestWithLogging(okTopicPrompt, 'Results:\n' + outOfOdmainResultsAsSring, '3. OKTopicsPrompt.txt')
     violationIndices = this.parseViolationIndices(violationIndices)
-    return this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices)
+
+    // console.log('violations', nonDomainViolations)
+
+    const results = this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices)
+
+    // console.log('These are OK', results)
+
+    return results
   }
 
   async analyzeBannedTopics (conversationHistory, BANNED_TOPICS, formatBulletList) {
