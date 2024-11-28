@@ -128,8 +128,6 @@ class ConversationTracker {
     this.primerMessage.content = PromptTemplates.DISTRCATION_PROMPT(topic)
       .replace(/{DISTRACTION}/g, topic)
       .replace(/{DOMAIN}/g, this.allowedDomains[0])
-
-    this.logger('PROMPT: \n ' + this.primerMessage.content + '\n \n No response as there will be multiple...', this.uniqueTimestamp, 'DistractionPrompt.txt')
   }
 
   async calculateTotalCharactersInConversation () {
