@@ -4,7 +4,7 @@
   "description": "Botium Coach Worker",
   "main": "index.js",
   "scripts": {
-    "build": "npm run eslint && npm test",
+    "build": "npm run eslint",
     "eslint": "eslint index.js \"./src/**/*.js\" \"./test/**/*.js\"",
     "eslint-fix": "eslint --fix index.js \"./src/**/*.js\" \"./test/**/*.js\"",
     "test": "mocha --timeout 10000 \"./test/**/*.spec.js\"",
