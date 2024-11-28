@@ -116,20 +116,31 @@ class TranscriptAnalyser {
       const nonDomainViolations = await this.identifyNonDomainViolations()
       this.logResults('Step 2. Out of domain violations', nonDomainViolations, 'ResultBreakdown.txt')
 
-      // Step 3. Filtering out any references to topics that are deemed OK.
+      // console.log('out of domain', nonDomainViolations)
+      // console.log('banned topic Violations', bannedtopicViolations)
+
+      // Step 3. offesnive
+      // const offensiveViolations = await this.identifyOffensiveViolations()
+      // this.logResults('Step 3. Offensive violations', offensiveViolations, 'ResultBreakdown.txt')
+
+      // Step 4. Filtering out any references to topics that are deemed OK.
       const confirmedViolations = await this.filterOutOkTopicViolations(nonDomainViolations, bannedtopicViolations)
 
-      // Step 4. Grade the results that have now been categorised(each one is done individualy).
+      // Step 5. Grade the results that have now been categorised(each one is done individualy).
       let gradedResults = await this.gradeViolations(confirmedViolations, history)
-      this.logResults('Step 4. After grading the categorised results', gradedResults, 'ResultBreakdown.txt')
-
-      // Step 5. Removing any duplicates that might exist.
-      gradedResults = this.removeDuplicateResults(gradedResults)
-      this.logResults('Step 5. After removing any duplicates', gradedResults, 'ResultBreakdown.txt')
+      this.logResults('Step 5. After grading the categorised results', gradedResults, 'ResultBreakdown.txt')
 
       // Step 6. Filter out severities of N/A
+      gradedResults = await this.removeRepititionRequests(gradedResults)
+      this.logResults('Step 6. After removing violations that are repitition requests', gradedResults, 'RepititionPrompt.txt')
+
+      // Step 7. Removing any duplicates that might exist.
+      gradedResults = this.removeDuplicateResults(gradedResults)
+      this.logResults('Step 7. After removing any duplicates', gradedResults, 'ResultBreakdown.txt')
+
+      // Step 8. Filter out severities of N/A
       gradedResults = this.removeNonApplicableSeverity(gradedResults)
-      this.logResults('Step 6. After removing results with severity of N/A', gradedResults, 'ResultBreakdown.txt')
+      this.logResults('Step 8. After removing results with severity of N/A', gradedResults, 'ResultBreakdown.txt')
 
       return this.prepareTestResults(gradedResults, cycleNumber, distractionTopic)
     } catch (error) {
@@ -238,7 +249,12 @@ class TranscriptAnalyser {
       detectionUserPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_USER(violation.statement, domain, priorMessages)
     }
 
+    // console.log('\n prompt: ' + detectionSystemPrompt)
+    // console.log('\n ' + detectionUserPrompt)
+
     const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'DetectionPrompt.txt')
+
+    // console.log('\n response: ' + detectionResponse)
 
     // Parse detection response
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
@@ -398,6 +414,36 @@ class TranscriptAnalyser {
     return uniqueGradedResults
   }
 
+  async removeRepititionRequests (gradedResults) {
+    this.logger('\nRemoving repetition requests:', this.uniqueTimestamp)
+    this.logger(gradedResults, this.uniqueTimestamp)
+
+    const filteredResults = []
+
+    for (const result of gradedResults) {
+      const systemPrompt = PromptTemplates.REPITITION_PROMPT_SYSTEM()
+      const userPrompt = PromptTemplates.REPITITION_PROMPT_USER(result.statement)
+
+      try {
+        const response = await this.sendRequestWithLogging(systemPrompt, userPrompt, 'RepititionPrompt.txt')
+        if (typeof response === 'string' && response.trim().toLowerCase().includes('yes')) {
+          console.log('Throwing away: ' + result.statement)
+        } else {
+          filteredResults.push(result)
+          // console.log('Keeping: ' + result.statement)
+        }
+      } catch (error) {
+        // console.error('Error identifying repetition request:', error)
+        // Optionally keep the result in case of an error or decide to log it for manual review
+      }
+    }
+
+    this.logger('After removing repetition requests:', this.uniqueTimestamp)
+    this.logger(filteredResults, this.uniqueTimestamp)
+
+    return filteredResults
+  }
+
   removeNonApplicableSeverity (results) {
     this.logger('\nRemoving results with severity of N/A', this.uniqueTimestamp)
     this.logger(results, this.uniqueTimestamp)
@@ -447,6 +493,17 @@ class TranscriptAnalyser {
     this.logger('Found banned topics(below)', this.uniqueTimestamp)
     this.logger(result, this.uniqueTimestamp)
     this.logger('', this.uniqueTimestamp)
+
+    return result
+  }
+
+  async identifyOffensiveViolations () {
+    this.logger('Identifying if the LLM discussed topics outside of the domain...', this.uniqueTimestamp)
+
+    const result = await this.analyzeNonDomainResults(this.allowedDomains, this.sendRequestAndUpdateTokens.bind(this))
+
+    this.logger('Found violations outside of domain: ', this.uniqueTimestamp)
+    this.logger(result, this.uniqueTimestamp)
 
     return result
   }
@@ -571,9 +628,10 @@ class TranscriptAnalyser {
 
     const transcriptAsText = 'Transcript:\n' + historyAsString.join('\n')
 
-    const violationIndicies = await sendRequestAndUpdateTokens(
+    const violationIndicies = await this.sendRequestWithLogging(
       nonDomainResultsPrompt,
-      transcriptAsText
+      transcriptAsText,
+      'OutOfDomainPrompt.txt'
     )
 
     const violationIndices = this.parseViolationIndices(violationIndicies)
