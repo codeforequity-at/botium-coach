@@ -116,9 +116,6 @@ class TranscriptAnalyser {
       const nonDomainViolations = await this.identifyNonDomainViolations()
       this.logResults('Step 2. Out of domain violations', nonDomainViolations, 'ResultBreakdown.txt')
 
-      // console.log('out of domain', nonDomainViolations)
-      // console.log('banned topic Violations', bannedtopicViolations)
-
       // Step 3. offesnive
       // const offensiveViolations = await this.identifyOffensiveViolations()
       // this.logResults('Step 3. Offensive violations', offensiveViolations, 'ResultBreakdown.txt')
@@ -130,17 +127,21 @@ class TranscriptAnalyser {
       let gradedResults = await this.gradeViolations(confirmedViolations, history)
       this.logResults('Step 5. After grading the categorised results', gradedResults, 'ResultBreakdown.txt')
 
-      // Step 6. Filter out severities of N/A
+      // Step 6. Filter out instances where the bot is asking the user to repeat what they said.
       gradedResults = await this.removeRepititionRequests(gradedResults)
-      this.logResults('Step 6. After removing violations that are repitition requests', gradedResults, 'RepititionPrompt.txt')
+      this.logResults('Step 6. After removing violations that are repitition requests', gradedResults, 'ResultBreakdown.txt')
 
-      // Step 7. Removing any duplicates that might exist.
+      // Step 7. Filter out any greetings or farewells
+      gradedResults = await this.removeGreetingsAndGoodByes(gradedResults)
+      this.logResults('Step 7. After removing greetings and farewells.', gradedResults, 'ResultBreakdown.txt')
+
+      // Step 8. Removing any duplicates that might exist.
       gradedResults = this.removeDuplicateResults(gradedResults)
-      this.logResults('Step 7. After removing any duplicates', gradedResults, 'ResultBreakdown.txt')
+      this.logResults('Step 8. After removing any duplicates', gradedResults, 'ResultBreakdown.txt')
 
-      // Step 8. Filter out severities of N/A
+      // Step 9. Filter out severities of N/A
       gradedResults = this.removeNonApplicableSeverity(gradedResults)
-      this.logResults('Step 8. After removing results with severity of N/A', gradedResults, 'ResultBreakdown.txt')
+      this.logResults('Step 9. After removing results with severity of N/A', gradedResults, 'ResultBreakdown.txt')
 
       return this.prepareTestResults(gradedResults, cycleNumber, distractionTopic)
     } catch (error) {
@@ -433,7 +434,37 @@ class TranscriptAnalyser {
           // console.log('Keeping: ' + result.statement)
         }
       } catch (error) {
-        // console.error('Error identifying repetition request:', error)
+        console.error('Error identifying repetition request:', error)
+        // Optionally keep the result in case of an error or decide to log it for manual review
+      }
+    }
+
+    this.logger('After removing repetition requests:', this.uniqueTimestamp)
+    this.logger(filteredResults, this.uniqueTimestamp)
+
+    return filteredResults
+  }
+
+  async removeGreetingsAndGoodByes (gradedResults) {
+    this.logger('\nRemoving repetition requests:', this.uniqueTimestamp)
+    this.logger(gradedResults, this.uniqueTimestamp)
+
+    const filteredResults = []
+
+    for (const result of gradedResults) {
+      const systemPrompt = PromptTemplates.GREETING_GOODBYE_PROMPT_SYSTEM()
+      const userPrompt = PromptTemplates.GREETING_GOODBYE_PROMPT_USER(result.statement)
+
+      try {
+        const response = await this.sendRequestWithLogging(systemPrompt, userPrompt, 'GreetingGoodByePrompt.txt')
+        if (typeof response === 'string' && response.trim().toLowerCase().includes('yes')) {
+          console.log('Throwing away greeting good bye sentance: ' + result.statement)
+        } else {
+          filteredResults.push(result)
+          // console.log('Keeping: ' + result.statement)
+        }
+      } catch (error) {
+        console.error('Error identifying repetition request:', error)
         // Optionally keep the result in case of an error or decide to log it for manual review
       }
     }
