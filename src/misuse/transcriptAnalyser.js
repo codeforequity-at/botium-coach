@@ -427,7 +427,7 @@ class TranscriptAnalyser {
       try {
         const response = await this.sendRequestWithLogging(systemPrompt, userPrompt, 'RepititionPrompt.txt')
         if (typeof response === 'string' && response.trim().toLowerCase().includes('yes')) {
-          console.log('Throwing away: ' + result.statement)
+          // console.log('Throwing away: ' + result.statement)
         } else {
           filteredResults.push(result)
           // console.log('Keeping: ' + result.statement)
