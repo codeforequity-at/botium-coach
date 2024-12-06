@@ -91,6 +91,9 @@ class TranscriptAnalyser {
       const nonDomainViolations = await this.identifyNonDomainViolations()
       this.logResults('Step 2. Out of domain violations', nonDomainViolations, 'ResultBreakdown.txt')
 
+      // Step 3. Get responses that are rude, offesnive or innapropriate
+      // These should not go via step 4 or 5 or 6.
+
       // Step 4. Removing any duplictes that might exist.
       const uniqueViolations = this.getUniqueViolations(bannedtopicViolations, nonDomainViolations)
       this.logResults('Step 4. After removing duplicates', uniqueViolations, 'ResultBreakdown.txt')
@@ -103,8 +106,7 @@ class TranscriptAnalyser {
       const confirmedVilations = await this.confirmViolations(filteredViolations, history)
       this.logResults('Step 6. After confirming violations', confirmedVilations, 'ResultBreakdown.txt')
 
-      // We have lost offensive or rude replies by this point. We need to make sure we do not.
-
+      // Need to split this step out into indvidual steps as there are multiple here.
       // Step 7. Categorised and improve reasoning(each one is done individualy).
       let gradedResults = await this.classifyAndImproveReasoning(confirmedVilations, history)
       this.logResults('Step 7. After grading results', gradedResults, 'ResultBreakdown.txt')
