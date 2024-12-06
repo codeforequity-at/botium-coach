@@ -36,7 +36,10 @@ class TranscriptAnalyser {
 
     // Removing any violations that are actually OK.
     if (this.approvedTopics.length > 0 && violations.length > 0) {
-      filteredViolations = await this.excludeOKTopics(violations)
+      // We do not want to exclude answers that have been deemed inappropriate
+      filteredViolations = violations.filter(violation => violation.type !== 'inappropriate')
+      console.log('---> 2', filteredViolations)
+      filteredViolations = await this.excludeOKTopics(filteredViolations)
       return filteredViolations
     }
 
@@ -93,10 +96,14 @@ class TranscriptAnalyser {
 
       // Step 3. Get responses that are rude, offesnive or innapropriate
       // These should not go via step 4 or 5 or 6.
+      const inaprpriateViolations = await this.identifyInapropriateViolations()
+      this.logResults('Step 3. Offensive violations', inaprpriateViolations, 'ResultBreakdown.txt')
 
       // Step 4. Removing any duplictes that might exist.
-      const uniqueViolations = this.getUniqueViolations(bannedtopicViolations, nonDomainViolations)
+      const uniqueViolations = this.getUniqueViolations(bannedtopicViolations, nonDomainViolations, inaprpriateViolations)
       this.logResults('Step 4. After removing duplicates', uniqueViolations, 'ResultBreakdown.txt')
+
+      // console.log('---> 1', uniqueViolations)
 
       // Step 5. Filtering out any references to topics that are deemed OK.
       const filteredViolations = await this.excludeViolationsThatAreOk(uniqueViolations)
@@ -110,6 +117,8 @@ class TranscriptAnalyser {
       // Step 7. Categorised and improve reasoning(each one is done individualy).
       let gradedResults = await this.classifyAndImproveReasoning(confirmedVilations, history)
       this.logResults('Step 7. After grading results', gradedResults, 'ResultBreakdown.txt')
+
+      console.log('3')
 
       // Step 8. Filter out instances where the bot is asking the user to repeat what they said.
       gradedResults = await this.removeRepititionRequests(gradedResults)
@@ -130,15 +139,9 @@ class TranscriptAnalyser {
     }
   }
 
-  /**
-   * Removes duplicates from two arrays of violations based on the `index` property.
-   * @param {Array} array1 - The first array of violations.
-   * @param {Array} array2 - The second array of violations.
-   * @returns {Array} - An array of unique violations based on `index`.
-   */
-  getUniqueViolations (array1, array2) {
-    // Combine both arrays
-    const combinedViolations = [...array1, ...array2]
+  getUniqueViolations (array1, array2, array3) {
+    // Combine all arrays
+    const combinedViolations = [...array1, ...array2, ...array3]
 
     // Create a map to track the best violation for each index
     const indexMap = new Map()
@@ -146,9 +149,14 @@ class TranscriptAnalyser {
     combinedViolations.forEach((violation) => {
       const existingViolation = indexMap.get(violation.index)
 
-      // If there's no existing violation for this index or
-      // if the current violation's type is 'banned', replace it
-      if (!existingViolation || violation.type === 'banned') {
+      // Replace logic:
+      // 1. Always prefer 'inappropriate' over other types
+      // 2. If there's no existing violation or if the current violation's type is 'banned', replace it
+      if (
+        !existingViolation ||
+        violation.type === 'inappropriate' ||
+        (violation.type === 'banned' && existingViolation.type !== 'inappropriate')
+      ) {
         indexMap.set(violation.index, violation)
       }
     })
@@ -237,6 +245,9 @@ class TranscriptAnalyser {
     } else if (violation.type === 'out of domain') {
       detectionSystemPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_SYSTEM(violation.statement, domain, priorMessages)
       detectionUserPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_USER(violation.statement, domain, priorMessages)
+    } else if (violation.type === 'inappropriate') {
+      detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM()
+      detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
     }
 
     return { detectionSystemPrompt, detectionUserPrompt }
@@ -257,25 +268,33 @@ class TranscriptAnalyser {
       detectionSystemPrompt = PromptTemplates.DETECT_BANNED_TOPIC_SYSTEM(violation.statement, forbiddenTopics, priorMessages)
     } else if (violation.type === 'out of domain') {
       detectionSystemPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_SYSTEM(violation.statement, domain, priorMessages)
+    } else if (violation.type === 'inappropriate') {
+      detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM()
     }
-
     let detectionUserPrompt
     if (violation.type === 'banned') {
       detectionUserPrompt = PromptTemplates.DETECT_BANNED_TOPIC_USER(violation.statement, forbiddenTopics, priorMessages)
     } else if (violation.type === 'out of domain') {
       detectionUserPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_USER(violation.statement, domain, priorMessages)
+    } else if (violation.type === 'inappropriate') {
+      detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
     }
 
     const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'DetectionPrompt.txt')
 
-    // Parse detection response
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
 
-    if (!confirmedViolation || confirmedViolation.deviation !== 'YES') {
-      return false
+    if (violation.type === 'inappropriate') {
+      if (confirmedViolation && confirmedViolation.inappropriate === 'YES') {
+        return true
+      }
+    } else {
+      if (confirmedViolation && confirmedViolation.deviation === 'YES') {
+        return true
+      }
     }
 
-    return true
+    return false
   }
 
   async classifyAndImproveReason (violation, history) {
@@ -333,7 +352,15 @@ class TranscriptAnalyser {
         detectionResponse,
         priorMessages
       )
+    } else if (violation.type === 'inappropriate') {
+      classificationPromptSystem = PromptTemplates.CLASSIFY_INAPPROPRIATE_SEVERITY_SYSTEM()
+      classificationPromptUser = PromptTemplates.CLASSIFY_INAPPROPRIATE_SEVERITY_USER(
+        violation.statement,
+        '??',
+        priorMessages
+      )
     }
+
     const classificationResponse = await this.sendRequestWithLogging(
       classificationPromptSystem,
       classificationPromptUser,
@@ -359,11 +386,13 @@ class TranscriptAnalyser {
       const statement = lines.find((line) => line.trimStart().startsWith('Statement'))?.split(': ')[1]?.replace(/^"|"$/g, '')
       const context = lines.find((line) => line.trimStart().startsWith('Context'))?.split(': ')[1]?.replace(/^"|"$/g, '')
       const deviation = lines.find((line) => line.trimStart().startsWith('Deviation'))?.split(': ')[1]
+      const inappropriate = lines.find((line) => line.trimStart().startsWith('Inappropriate'))?.split(': ')[1]
 
       return {
         statement,
         context,
-        deviation
+        deviation,
+        inappropriate
       }
     } catch (error) {
       console.error('Error parsing detection response:', error)
@@ -593,6 +622,17 @@ class TranscriptAnalyser {
     return result
   }
 
+  async identifyInapropriateViolations () {
+    this.logger('Identifying if the LLM discussed gave any inaprpriate answers...', this.uniqueTimestamp)
+
+    const result = await this.checkForAnyInapropriateAnswers()
+
+    this.logger('Found inapropriate answers: ', this.uniqueTimestamp)
+    this.logger(result, this.uniqueTimestamp)
+
+    return result
+  }
+
   async excludeOKTopics (results) {
     let result = null
 
@@ -694,10 +734,46 @@ class TranscriptAnalyser {
     return violationString.split(',').map(index => parseInt(index.trim(), 10))
   }
 
+  async checkForAnyInapropriateAnswers () {
+    const inapropriateAnswersPrompt = PromptTemplates.DETECT_INAPPROPRIATE_PROMPT()
+
+    const historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`)
+
+    const transcriptAsText = 'Transcript:\n' + historyAsString.join('\n')
+
+    const violationIndicies = await this.sendRequestWithLogging(
+      inapropriateAnswersPrompt,
+      transcriptAsText,
+      'OutOfDomainPrompt.txt'
+    )
+
+    const violationIndices = this.parseViolationIndices(violationIndicies)
+
+    const results = violationIndices
+      ? violationIndices
+        .filter(index => index > 0 && index <= this.conversationHistory.length)
+        .map(index => ({
+          index,
+          role: this.conversationHistory[index - 1].role, // Include the role (user or assistant)
+          statement: this.conversationHistory[index - 1].content,
+          type: 'inappropriate'
+        }))
+      : []
+
+    const usersOnlyResponses = results.filter(message => message.role === 'user')
+
+    this.logger('PROMPT: \n ' + inapropriateAnswersPrompt, this.uniqueTimestamp, '3. InapropriateResponsePrompt.txt')
+    this.logger(transcriptAsText, this.uniqueTimestamp, '3. InapropriateResponsePrompt.txt')
+    this.logger('\n \nGPT-4 RESPONSE: \n' + violationIndicies, this.uniqueTimestamp, '3. InapropriateResponsePrompt.txt')
+    this.logger('\n' + JSON.stringify(results, null, 2), this.uniqueTimestamp, '3. InapropriateResponsePrompt.txt')
+
+    return usersOnlyResponses
+  }
+
   async analyzeNonDomainResults (DOMAINS, sendRequestAndUpdateTokens) {
     const nonDomainResultsPrompt = PromptTemplates.DETECT_OUT_OF_DOMAIN_PROMPT(DOMAINS, this.commonInstance.formatTopicList)
 
-    const historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.statement}`)
+    const historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`)
 
     const transcriptAsText = 'Transcript:\n' + historyAsString.join('\n')
 
@@ -730,6 +806,7 @@ class TranscriptAnalyser {
     return filteredResults
   }
 
+  // think I can delete this
   async categoriseResults (bannedTopicViolations, outOfDomainViolations, foundBannedTopicViolations) {
     this.logger('Categorising results...', this.uniqueTimestamp)
 
@@ -741,7 +818,8 @@ class TranscriptAnalyser {
 
       categorisedViolations = [
         ...(bannedTopicViolations && bannedTopicViolations.trim() ? await this.getBannedResults(bannedTopicViolations, 'banned') : []),
-        ...(outOfDomainViolations && outOfDomainViolations.trim() ? await this.getBannedResults(outOfDomainViolations, 'out of domain') : [])
+        ...(outOfDomainViolations && outOfDomainViolations.trim() ? await this.getBannedResults(outOfDomainViolations, 'out of domain') : []),
+        ...(outOfDomainViolations && outOfDomainViolations.trim() ? await this.getBannedResults(outOfDomainViolations, 'inappropriate') : [])
       ]
 
       this.logger('Categorisation results:', this.uniqueTimestamp)
