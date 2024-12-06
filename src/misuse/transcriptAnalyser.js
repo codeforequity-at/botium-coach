@@ -31,41 +31,16 @@ class TranscriptAnalyser {
     this.commonInstance = new Common(this.logger)
   }
 
-  async getBannedTopicViolations () {
-    let bannedTopicViolationsAsArray = []
+  async excludeViolationsThatAreOk (violations) {
+    let filteredViolations = violations
 
-    try {
-      bannedTopicViolationsAsArray = await this.identifyBannedTopics()
-    } catch (error) {
-      console.error('Error fetching banned topics:', error)
+    // Removing any violations that are actually OK.
+    if (this.approvedTopics.length > 0 && violations.length > 0) {
+      filteredViolations = await this.excludeOKTopics(violations)
+      return filteredViolations
     }
 
-    if (!Array.isArray(bannedTopicViolationsAsArray)) {
-      bannedTopicViolationsAsArray = []
-    }
-
-    return bannedTopicViolationsAsArray
-  }
-
-  async filterOutOkTopicViolations (nonDomainViolations, bannedTopicViolationsAsArray) {
-    let violationsExceptTopicsThatAreOkArray = []
-    if (this.approvedTopics.length > 0) {
-      if (nonDomainViolations.length > 0) {
-        violationsExceptTopicsThatAreOkArray = await this.excludeOKTopics(nonDomainViolations)
-
-        // console.log('\nviolationsExceptTopicsThatAreOkArray', violationsExceptTopicsThatAreOkArray)
-
-        this.logResults('Step 3. After filtering out OK topics', violationsExceptTopicsThatAreOkArray, 'ResultBreakdown.txt')
-      }
-    } else {
-      violationsExceptTopicsThatAreOkArray = nonDomainViolations
-    }
-
-    return this.numberViolations(violationsExceptTopicsThatAreOkArray, bannedTopicViolationsAsArray)
-  }
-
-  numberViolations (outStandingExceptions, bannedTopicViolationsAsArray) {
-    return [...bannedTopicViolationsAsArray.map(statement => ({ statement, type: 'banned' })), ...outStandingExceptions.map(statement => ({ statement, type: 'out of domain' }))]
+    return violations
   }
 
   prepareTestResults (result, cycleNumber, distractionTopic) {
@@ -108,46 +83,76 @@ class TranscriptAnalyser {
     this.logger('', this.uniqueTimestamp)
 
     try {
-      // Step 1. Get sentances that violate the topics outself of the domain/s.
-      const bannedtopicViolations = await this.getBannedTopicViolations()
+      // Step 1. Get responses that violate topics outside of the domain/s.
+      const bannedtopicViolations = await this.identifyBannedTopics()
       this.logResults('Step 1. Banned topic violations', bannedtopicViolations, 'ResultBreakdown.txt')
 
-      // Step 2. Non domain results
+      // Step 2. Get responses that violate the domain/s.
       const nonDomainViolations = await this.identifyNonDomainViolations()
       this.logResults('Step 2. Out of domain violations', nonDomainViolations, 'ResultBreakdown.txt')
 
-      // Step 3. offesnive
-      // const offensiveViolations = await this.identifyOffensiveViolations()
-      // this.logResults('Step 3. Offensive violations', offensiveViolations, 'ResultBreakdown.txt')
+      // Step 4. Removing any duplictes that might exist.
+      const uniqueViolations = this.getUniqueViolations(bannedtopicViolations, nonDomainViolations)
+      this.logResults('Step 4. After removing duplicates', uniqueViolations, 'ResultBreakdown.txt')
 
-      // Step 4. Filtering out any references to topics that are deemed OK.
-      const confirmedViolations = await this.filterOutOkTopicViolations(nonDomainViolations, bannedtopicViolations)
+      // Step 5. Filtering out any references to topics that are deemed OK.
+      const filteredViolations = await this.excludeViolationsThatAreOk(uniqueViolations)
+      this.logResults('Step 5. After excluding topics that are deemed as OK', filteredViolations, 'ResultBreakdown.txt')
 
-      // Step 5. Grade the results that have now been categorised(each one is done individualy).
-      let gradedResults = await this.gradeViolations(confirmedViolations, history)
-      this.logResults('Step 5. After grading the categorised results', gradedResults, 'ResultBreakdown.txt')
+      // Step 6. Confirm violations
+      const confirmedVilations = await this.confirmViolations(filteredViolations, history)
+      this.logResults('Step 6. After confirming violations', confirmedVilations, 'ResultBreakdown.txt')
 
-      // Step 6. Filter out instances where the bot is asking the user to repeat what they said.
+      // We have lost offensive or rude replies by this point. We need to make sure we do not.
+
+      // Step 7. Categorised and improve reasoning(each one is done individualy).
+      let gradedResults = await this.classifyAndImproveReasoning(confirmedVilations, history)
+      this.logResults('Step 7. After grading results', gradedResults, 'ResultBreakdown.txt')
+
+      // Step 8. Filter out instances where the bot is asking the user to repeat what they said.
       gradedResults = await this.removeRepititionRequests(gradedResults)
-      this.logResults('Step 6. After removing violations that are repitition requests', gradedResults, 'ResultBreakdown.txt')
+      this.logResults('Step 8. After removing violations that are repitition requests', gradedResults, 'ResultBreakdown.txt')
 
-      // Step 7. Filter out any greetings or farewells
+      // Step 9. Filter out any greetings or farewells
       gradedResults = await this.removeGreetingsAndGoodByes(gradedResults)
-      this.logResults('Step 7. After removing greetings and farewells.', gradedResults, 'ResultBreakdown.txt')
+      this.logResults('Step 9. After removing greetings and farewells.', gradedResults, 'ResultBreakdown.txt')
 
-      // Step 8. Removing any duplicates that might exist.
-      gradedResults = this.removeDuplicateResults(gradedResults)
-      this.logResults('Step 8. After removing any duplicates', gradedResults, 'ResultBreakdown.txt')
-
-      // Step 9. Filter out severities of N/A
+      // Step 10. Filter out severities of N/A
       gradedResults = this.removeNonApplicableSeverity(gradedResults)
-      this.logResults('Step 9. After removing results with severity of N/A', gradedResults, 'ResultBreakdown.txt')
+      this.logResults('Step 10. After removing results with severity of N/A', gradedResults, 'ResultBreakdown.txt')
 
       return this.prepareTestResults(gradedResults, cycleNumber, distractionTopic)
     } catch (error) {
       console.error('\nError analysing conversation:\n', error)
       return false
     }
+  }
+
+  /**
+   * Removes duplicates from two arrays of violations based on the `index` property.
+   * @param {Array} array1 - The first array of violations.
+   * @param {Array} array2 - The second array of violations.
+   * @returns {Array} - An array of unique violations based on `index`.
+   */
+  getUniqueViolations (array1, array2) {
+    // Combine both arrays
+    const combinedViolations = [...array1, ...array2]
+
+    // Create a map to track the best violation for each index
+    const indexMap = new Map()
+
+    combinedViolations.forEach((violation) => {
+      const existingViolation = indexMap.get(violation.index)
+
+      // If there's no existing violation for this index or
+      // if the current violation's type is 'banned', replace it
+      if (!existingViolation || violation.type === 'banned') {
+        indexMap.set(violation.index, violation)
+      }
+    })
+
+    // Convert the map values back to an array
+    return Array.from(indexMap.values())
   }
 
   gpt4ResponseToArray (input) {
@@ -170,7 +175,7 @@ class TranscriptAnalyser {
       messagesAsObject = `${systemContent ? systemContent + '\n\n' : ''}${userContent}`
     } else {
       // Convert array to prompt text.
-      messagesAsObject = messagesAsObject.map(message => `${message.role}: ${message.content}`).join('\n')
+      messagesAsObject = messagesAsObject.map(message => `${message.role}: ${message.statement}`).join('\n')
     }
 
     const llamaClient = new LlamaModelClient()
@@ -220,20 +225,29 @@ class TranscriptAnalyser {
       : historyCopy.slice(0, violationIndex + 1)
   }
 
-  async gradeViolation (violation, history) {
+  generateDetectionPrompts (violation, domain, forbiddenTopics, priorMessages) {
+    let detectionSystemPrompt
+    let detectionUserPrompt
+
+    if (violation.type === 'banned') {
+      detectionSystemPrompt = PromptTemplates.DETECT_BANNED_TOPIC_SYSTEM(violation.statement, forbiddenTopics, priorMessages)
+      detectionUserPrompt = PromptTemplates.DETECT_BANNED_TOPIC_USER(violation.statement, forbiddenTopics, priorMessages)
+    } else if (violation.type === 'out of domain') {
+      detectionSystemPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_SYSTEM(violation.statement, domain, priorMessages)
+      detectionUserPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_USER(violation.statement, domain, priorMessages)
+    }
+
+    return { detectionSystemPrompt, detectionUserPrompt }
+  }
+
+  async isTrueViolation (violation, history) {
     const domain = this.commonInstance.formatTopicList(this.allowedDomains, true)
     const forbiddenTopics = this.commonInstance.formatTopicList(this.forbiddenTopics, true)
 
     const historyCopy = [...history]
-    const violationIndex = this.locateViolationIndex(historyCopy, violation)
-
-    if (violationIndex === -1) {
-      console.error('Violation statement not found in history:', violation.statement)
-      return null
-    }
 
     // Get prior messages for context
-    const priorMessages = this.getPrecedingMessages(violationIndex, historyCopy, true)
+    const priorMessages = this.getPrecedingMessages(violation.index, historyCopy, true)
 
     // Step 1: Detection
     let detectionSystemPrompt
@@ -250,19 +264,43 @@ class TranscriptAnalyser {
       detectionUserPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_USER(violation.statement, domain, priorMessages)
     }
 
-    // console.log('\n prompt: ' + detectionSystemPrompt)
-    // console.log('\n ' + detectionUserPrompt)
-
     const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'DetectionPrompt.txt')
-
-    // console.log('\n response: ' + detectionResponse)
 
     // Parse detection response
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
 
     if (!confirmedViolation || confirmedViolation.deviation !== 'YES') {
-      return null // No violation detected
+      return false
     }
+
+    return true
+  }
+
+  async classifyAndImproveReason (violation, history) {
+    const domain = this.commonInstance.formatTopicList(this.allowedDomains, true)
+    const forbiddenTopics = this.commonInstance.formatTopicList(this.forbiddenTopics, true)
+
+    const historyCopy = [...history]
+
+    // Get prior messages for context
+    const priorMessages = this.getPrecedingMessages(violation.index, historyCopy, true)
+
+    // This is getting the context and the reason. But we are ctually getting that during the confirmatiom stop.
+    const { detectionSystemPrompt, detectionUserPrompt } = this.generateDetectionPrompts(
+      violation,
+      domain,
+      forbiddenTopics,
+      priorMessages
+    )
+
+    const detectionResponse = await this.sendRequestWithLogging(
+      detectionSystemPrompt,
+      detectionUserPrompt,
+      'DetectionPrompt.txt'
+    )
+
+    // Parse detection response
+    const confirmedViolation = this.parseDetectionResponse(detectionResponse)
 
     // Step 2: Classification
     let classificationPromptSystem
@@ -300,10 +338,7 @@ class TranscriptAnalyser {
       'ClassificationPrompt.txt'
     )
 
-    // Parse classification response
     const classificationResult = this.parseClassificationResponse(classificationResponse, violation.statement, confirmedViolation.context)
-
-    // Improve reasoning
 
     const reasoningResponse = await this.sendRequestWithLogging(
       PromptTemplates.REASONING_PROMPT_SYSTEM(),
@@ -395,26 +430,6 @@ class TranscriptAnalyser {
     return response.includes('Severity:') && response.includes('Reason:')
   }
 
-  removeDuplicateResults (results) {
-    this.logger('\nRemoving duplicates from reults:', this.uniqueTimestamp)
-    this.logger(results, this.uniqueTimestamp)
-
-    const uniqueGradedResults = []
-    const seenStatements = new Set()
-
-    for (const result of results) {
-      if (!seenStatements.has(result.statement)) {
-        uniqueGradedResults.push(result)
-        seenStatements.add(result.statement)
-      }
-    }
-
-    this.logger('After removing duplicates:', this.uniqueTimestamp)
-    this.logger(uniqueGradedResults, this.uniqueTimestamp)
-
-    return uniqueGradedResults
-  }
-
   async removeRepititionRequests (gradedResults) {
     this.logger('\nRemoving repetition requests:', this.uniqueTimestamp)
     this.logger(gradedResults, this.uniqueTimestamp)
@@ -458,7 +473,7 @@ class TranscriptAnalyser {
       try {
         const response = await this.sendRequestWithLogging(systemPrompt, userPrompt, 'GreetingGoodByePrompt.txt')
         if (typeof response === 'string' && response.trim().toLowerCase().includes('yes')) {
-          console.log('Throwing away greeting good bye sentance: ' + result.statement)
+          // console.log('Throwing away greeting good bye sentance: ' + result.statement)
         } else {
           filteredResults.push(result)
           // console.log('Keeping: ' + result.statement)
@@ -491,7 +506,32 @@ class TranscriptAnalyser {
     return finalResults
   }
 
-  async gradeViolations (violations, history) {
+  async confirmViolations (violations, history) {
+    this.logger('Grading results: \n', this.uniqueTimestamp)
+    this.logger(violations, this.uniqueTimestamp)
+
+    const confirmedResults = []
+
+    for (const violation of violations) {
+      try {
+        const isViolation = await this.isTrueViolation(violation, history)
+        if (isViolation === true) {
+          confirmedResults.push(violation)
+        } else {
+          // console.log('Excluding:', violation)
+        }
+      } catch (error) {
+        console.error('Error grading violation, so ignoring it...', error)
+      }
+    }
+
+    this.logger('Confirmed violations:', this.uniqueTimestamp)
+    this.logger(confirmedResults, this.uniqueTimestamp)
+
+    return confirmedResults
+  }
+
+  async classifyAndImproveReasoning (violations, history) {
     this.logger('Grading results: \n', this.uniqueTimestamp)
     this.logger(violations, this.uniqueTimestamp)
 
@@ -500,7 +540,7 @@ class TranscriptAnalyser {
     for (const violation of violations) {
       let gradedViolation
       try {
-        gradedViolation = await this.gradeViolation(violation, history)
+        gradedViolation = await this.classifyAndImproveReason(violation, history)
 
         if (gradedViolation != null) {
           gradedResultsList.push(gradedViolation)
@@ -521,6 +561,7 @@ class TranscriptAnalyser {
     const result = await this.analyzeBannedTopics(
       this.conversationHistory, this.forbiddenTopics, this.commonInstance.formatBulletList
     )
+
     this.logger('Found banned topics(below)', this.uniqueTimestamp)
     this.logger(result, this.uniqueTimestamp)
     this.logger('', this.uniqueTimestamp)
@@ -576,17 +617,10 @@ class TranscriptAnalyser {
 
   async excludeOKTopicViolations (OK_TOPICS, formatTopicList, nonDomainViolations) {
     const okTopicPrompt = PromptTemplates.DETECT_OK_TOPIC_PROMPT(OK_TOPICS, formatTopicList)
-    const outOfOdmainResultsAsSring = nonDomainViolations.map((violation, index) => `${index + 1}. ${violation}`).join('\n')
-    let violationIndices = await this.sendRequestWithLogging(okTopicPrompt, 'Results:\n' + outOfOdmainResultsAsSring, '3. OKTopicsPrompt.txt')
+    const outOfDomainResultsAsString = nonDomainViolations.map((statement, index) => `${index + 1}. Role: ${statement.role} -> Statement: "${statement.statement}"`).join('\n')
+    let violationIndices = await this.sendRequestWithLogging(okTopicPrompt, 'Results:\n' + outOfDomainResultsAsString, '3. OKTopicsPrompt.txt')
     violationIndices = this.parseViolationIndices(violationIndices)
-
-    // console.log('violations', nonDomainViolations)
-
-    const results = this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices)
-
-    // console.log('These are OK', results)
-
-    return results
+    return this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices)
   }
 
   async analyzeBannedTopics (conversationHistory, BANNED_TOPICS, formatBulletList) {
@@ -594,29 +628,35 @@ class TranscriptAnalyser {
       if (BANNED_TOPICS.length > 0) {
         const bannedTopicsPrompt = PromptTemplates.BANNED_TOPICS_PROMPT(BANNED_TOPICS, formatBulletList)
 
-        const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n')
+        const historyMsg = 'Full Conversation History:\n' +
+          conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n')
 
         const violationIndicies = await this.sendRequestAndUpdateTokens(
           bannedTopicsPrompt,
           historyMsg
         )
 
+        // Turning the comma seperated sting into an array
         const violationIndices = this.parseViolationIndices(violationIndicies)
 
-        const results = this.fetchViolatingMessages(this.conversationHistory, violationIndices)
+        const results = violationIndices
+          ? violationIndices
+            .filter(index => index > 0 && index <= this.conversationHistory.length)
+            .map(index => ({
+              index,
+              role: this.conversationHistory[index - 1].role, // Include the role (user or assistant)
+              statement: this.conversationHistory[index - 1].content,
+              type: 'banned'
+            }))
+          : []
+
+        const filteredResults = results.filter(message => message.role === 'user')
 
         this.logger('PROMPT: \n ' + bannedTopicsPrompt, this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
         this.logger(historyMsg, this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
-        this.logger('\n \nGPT-4 RESPONSE: \n' + violationIndicies, this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
-
-        if ((results === null || results.length === 0) && (!(historyMsg === null || historyMsg.length === 0))) {
-          this.logger('All messages found actually belong to the assistant!', this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
-          return null
-        } else {
-          this.logger('\n \nGPT-4 RESPONSE: \n' + results, this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
-        }
-
-        return results
+        this.logger('\n \nGPT-4 RESPONSE: \n' + (violationIndicies !== undefined ? violationIndicies : 'NOTHING'), this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
+        this.logger('\n \nGPT-4 RESPONSE AFTER PROCESSING: \n' + JSON.stringify(filteredResults, null, 2), this.uniqueTimestamp, '1. BannedTopicsPrompt.txt')
+        return filteredResults
       }
       return null
     } catch (error) {
@@ -632,8 +672,8 @@ class TranscriptAnalyser {
       const message = transcript[index - 1]
 
       // Ensure it’s a user message and its not empty.
-      if (message && message.role === 'user' && message.content) {
-        return message.content + '\n'
+      if (message && message.role === 'user' && message.statement) {
+        return message.statement + '\n'
       }
       return null // Explicitly return null to avoid undefined
     }).filter(message => message !== null) // Filter out null values
@@ -655,7 +695,7 @@ class TranscriptAnalyser {
   async analyzeNonDomainResults (DOMAINS, sendRequestAndUpdateTokens) {
     const nonDomainResultsPrompt = PromptTemplates.DETECT_OUT_OF_DOMAIN_PROMPT(DOMAINS, this.commonInstance.formatTopicList)
 
-    const historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`)
+    const historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.statement}`)
 
     const transcriptAsText = 'Transcript:\n' + historyAsString.join('\n')
 
@@ -667,14 +707,25 @@ class TranscriptAnalyser {
 
     const violationIndices = this.parseViolationIndices(violationIndicies)
 
-    const results = this.fetchViolatingMessages(this.conversationHistory, violationIndices)
+    const results = violationIndices
+      ? violationIndices
+        .filter(index => index > 0 && index <= this.conversationHistory.length)
+        .map(index => ({
+          index,
+          role: this.conversationHistory[index - 1].role, // Include the role (user or assistant)
+          statement: this.conversationHistory[index - 1].content,
+          type: 'out of domain'
+        }))
+      : []
+
+    const filteredResults = results.filter(message => message.role === 'user')
 
     this.logger('PROMPT: \n ' + nonDomainResultsPrompt, this.uniqueTimestamp, '2. OutOfDomainPrompt.txt')
     this.logger(transcriptAsText, this.uniqueTimestamp, '2. OutOfDomainPrompt.txt')
     this.logger('\n \nGPT-4 RESPONSE: \n' + violationIndicies, this.uniqueTimestamp, '2. OutOfDomainPrompt.txt')
-    this.logger('\n' + results, this.uniqueTimestamp, '2. OutOfDomainPrompt.txt')
+    this.logger('\n' + JSON.stringify(results, null, 2), this.uniqueTimestamp, '2. OutOfDomainPrompt.txt')
 
-    return results
+    return filteredResults
   }
 
   async categoriseResults (bannedTopicViolations, outOfDomainViolations, foundBannedTopicViolations) {

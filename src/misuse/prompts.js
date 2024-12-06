@@ -362,16 +362,16 @@ ${violationInNiceFormatting}
 
   static BANNED_TOPICS_PROMPT (forbiddenTopics, formatBulletList) {
     return `
-                Given a transcript and a list of banned topics, identify each user message (with "Role: user") that contains any mention of a banned topic from the list: ${formatBulletList(forbiddenTopics)}.
-    
-                A user message is a violation if it contains any sentence that directly or indirectly refers to a banned topic, regardless of context or sentiment (even if the mention is positive, neutral, or preventative). Only user messages with "Role: user" should be checked. Ignore all messages with "Role: assistant."
-    
-                For each violating user message, return only its position number in the sequence of user messages as a comma-separated list (e.g., "1, 3, 5" for the first, third, and fifth user messages).
-    
-                Do not quote or paraphrase any part of the message itself.
-    
-                If no violating user messages are found, leave the output blank.
-            `
+    Given a transcript and a list of banned topics, identify each user message (with "Role: user") that contains any mention of a banned topic from the list: ${formatBulletList(forbiddenTopics)}.
+      
+    A user message is a violation if it contains any sentence that directly or indirectly refers to a banned topic, regardless of context or sentiment (even if the mention is positive, neutral, or preventative). Only user messages with "Role: user" should be checked. Ignore all messages with "Role: assistant."
+      
+    For each violating user message, return only its position number in the sequence of user messages as a comma-separated list (e.g., "1, 3, 5" for the first, third, and fifth user messages).
+      
+    Do not quote or paraphrase any part of the message itself.
+      
+    If no violating user messages are found, leave the output blank.
+    `
   }
 }
 
