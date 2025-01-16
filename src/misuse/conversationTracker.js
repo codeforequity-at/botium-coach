@@ -1,6 +1,5 @@
-const OpenAIHelper = require('./llmProviders/openaiHelper.js')
+const OpenAIHelper = require('./llmProviders/LLMHelper.js')
 const { startContainer, stopContainer } = require('./driverHelper.js')
-const LlamaModelClient = require('./llmProviders/LlamaModelClient.js')
 const { TranscriptAnalyser } = require('./transcriptAnalyser.js')
 const Common = require('./common.js')
 
@@ -24,6 +23,12 @@ class ConversationTracker {
     this.approvedTopics = params.approvedTopics || []
     this.logger = logger
     this.commonInstance = new Common(this.logger)
+
+    if (!params.llm) {
+      throw new Error('LLM is required for ConversationTracker')
+    }
+    this.llm = params.llm
+    this.llmHelper = new OpenAIHelper(this.llm)
   }
 
   getConversationHistory () {
@@ -82,49 +87,28 @@ class ConversationTracker {
     return this.prepareMessages(prompt)
   }
 
-  async generateResponse (prompt, maxTokens = 500) {
+  async generateResponse (prompt) {
     const messages = this.prepareMessagesForResponse(prompt)
 
     try {
-      // In the future we should interface this out.
-      const useLlama = false
-
-      if (useLlama) {
-        return await this.generateLlamaResponse(prompt)
-      } else {
-        return await this.generateOpenAIResponse(messages, maxTokens)
-      }
+      return await this.generateLLMResponse(messages)
     } catch (error) {
       console.error('Error:', error.response ? error.response.data : error.message)
       return 'An error occurred while processing your request.'
     }
   }
 
-  async generateLlamaResponse (prompt) {
-    const llamaClient = new LlamaModelClient()
-    try {
-      const result = await llamaClient.getResponse(prompt)
-      console.log('LLama Model Response:', result)
-      this.conversationHistory.push({ role: 'assistant', content: result })
-      return result
-    } catch (error) {
-      console.error('Error:', error)
-    }
-  }
+  async generateLLMResponse (messages) {
+    const { result, prompt_tokens: promptUsed, completion_tokens: completionUsed } = await this.llmHelper.sendRequest(messages)
 
-  async generateOpenAIResponse (messages, maxTokens) {
-    const { result, prompt_tokens: promptUsed, completion_tokens: completionUsed } = await OpenAIHelper.sendOpenAIRequest(
-      messages, null, maxTokens
-    )
-
-    this.promptTokensUsed += promptUsed
-    this.completionTokensUsed += completionUsed
+    this.promptTokensUsed += promptUsed || 0
+    this.completionTokensUsed += completionUsed || 0
 
     this.conversationHistory.push({ role: 'assistant', content: result })
     return result
   }
 
-  updatePrimerMessage (topic) {
+  updateDistractionPrompt (topic) {
     this.primerMessage.content = PromptTemplates.DISTRCATION_PROMPT(topic)
       .replace(/{DISTRACTION}/g, topic)
       .replace(/{DOMAIN}/g, this.allowedDomains[0])
@@ -139,14 +123,11 @@ class ConversationTracker {
   }
 
   async performDistractionConversations (distractionTopics, numberOfCycles = 1) {
-    const resultsList = []
+    const misUseResultList = []
 
-    // In case we need it.
     const copyOfTimeStamp = this.uniqueTimestamp
 
     for (let cycle = 0; cycle < numberOfCycles; cycle++) {
-      console.log('cycle: ' + (cycle + 1) + '/' + numberOfCycles)
-
       for (const topic of distractionTopics) {
         if (distractionTopics.length > 0) {
           const currentIndex = distractionTopics.indexOf(topic)
@@ -155,25 +136,25 @@ class ConversationTracker {
 
         this.logger(`Processing topic: ${topic}`, this.uniqueTimestamp, null, true)
 
-        this.updatePrimerMessage(topic)
-        const results = await this.performConversation((cycle + 1), topic)
+        // This is where we get the two bots to have a conversation.
+        const misUseResults = await this.performConversation((cycle + 1), topic)
 
-        resultsList.push({ results })
-
-        this.conversationHistory = []
+        misUseResultList.push({ results: misUseResults })
       }
     }
 
-    return resultsList
+    return misUseResultList
   }
 
   async performConversation (cycleNumber, distractionTopic) {
     this.logger('The conversation between two bots is about to begin.', this.uniqueTimestamp, null, true)
     this.logger('The conversation will continue until the conversation history exceeds ' + MAX_CONVERSATION_CHARACTER_COUNT + ' characters.\n', this.uniqueTimestamp, null, true)
 
+    this.updateDistractionPrompt(distractionTopic)
+
     const copilotContainer = await startContainer(this.driver, this.logger)
 
-    copilotContainer.UserSays({ messageText: 'Hello Botium Copilot...' })
+    copilotContainer.UserSays({ messageText: 'Hello.' })
     const botiumCopilotFirstResponse = await copilotContainer.WaitBotSays()
 
     try {
@@ -185,15 +166,15 @@ class ConversationTracker {
       while (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
         const message = index === 0 ? botiumCopilotFirstResponse : botiumCopilotResponse
 
-        const msgToSendToGPT = message.messageText
+        const msgToSendToLLM = message.messageText
 
-        this.logger('\x1b[36m' + this.allowedDomains[0].charAt(0).toUpperCase() + this.allowedDomains[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToGPT + '\n', this.uniqueTimestamp, null, true)
+        this.logger('\x1b[36m' + this.allowedDomains[0].charAt(0).toUpperCase() + this.allowedDomains[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToLLM + '\n', this.uniqueTimestamp, null, true)
 
         conversationHistoryCharacterCount = await this.calculateTotalCharactersInConversation()
 
         if (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
           // Only ask the question if we are within the limit.
-          const response = await this.generateResponse(msgToSendToGPT, 500)
+          const response = await this.generateResponse(msgToSendToLLM)
           this.logger('\x1b[95mDistraction Bot: \x1b[0m' + response, this.uniqueTimestamp, null, true)
           copilotContainer.UserSays({ messageText: response })
           botiumCopilotResponse = await copilotContainer.WaitBotSays()
@@ -220,7 +201,8 @@ class ConversationTracker {
       BANNED_TOPICS: this.BANNED_TOPICS,
       OK_TOPICS: this.approvedTopics,
       conversationHistory: this.conversationHistory,
-      uniqueTimestamp: this.uniqueTimestamp
+      uniqueTimestamp: this.uniqueTimestamp,
+      llm: this.llm
     }, this.logger)
 
     return await analyser.analyseConversation(this.uniqueTimestamp, this.conversationHistory, cycleNumber, distractionTopic)
