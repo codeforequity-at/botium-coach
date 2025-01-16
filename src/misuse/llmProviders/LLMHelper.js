@@ -86,11 +86,8 @@ class lLMHelper {
 
   extractJsonFromContent (content) {
     try {
-      // First try to parse the entire content as JSON
       return JSON.parse(content)
     } catch (e) {
-      console.log('Error in extractJsonFromContent:', e)
-
       // If that fails, try to find JSON within the content using regex
       const jsonMatch = content.match(/\{[\s\S]*\}/)
       if (!jsonMatch) {
