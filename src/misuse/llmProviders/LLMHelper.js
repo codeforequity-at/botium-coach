@@ -86,21 +86,23 @@ class lLMHelper {
 
   extractJsonFromContent (content) {
     try {
+      // Attempt to parse the content directly
       return JSON.parse(content)
     } catch (e) {
-      // If that fails, try to find JSON within the content using regex
+      // If direct parsing fails, try to find JSON within the content using regex
       const jsonMatch = content.match(/\{[\s\S]*\}/)
       if (!jsonMatch) {
-        // There was no json found in the content. This either means
-        // 1. The LLM did not return a json object.
-        // 2. The LLM was not supposed to return a json object.
-
-        console.log('No JSON found in the content.', content)
-
+        // No JSON found in the content
         return content
       }
       try {
-        return JSON.parse(jsonMatch[0])
+        // Manually remove control characters
+        const sanitizedContent = jsonMatch[0].split('').filter(char => {
+          const code = char.charCodeAt(0)
+          return (code > 31 && code < 127) || (code > 159)
+        }).join('')
+
+        return JSON.parse(sanitizedContent)
       } catch (e) {
         console.log('Error in extractJsonFromContent:', e)
         console.log('content ->', content)

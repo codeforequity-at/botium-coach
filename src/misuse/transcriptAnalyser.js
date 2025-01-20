@@ -97,7 +97,7 @@ class TranscriptAnalyser {
 
       // Step 3. Out of the violations that violate the domain, lets work out if they were within the topics that were deemed OK.
       const domainViolationsExcludingSome = await this.excludeViolationsThatAreOk(nonDomainViolations)
-      this.logResults('Step 3. After excluding topics that are deemed as OK', domainViolationsExcludingSome, 'ResultBreakdown.txt')
+      this.logResults('Step 3. After excluding topics that are deemed as OK(OK within the domain)', domainViolationsExcludingSome, 'ResultBreakdown.txt')
 
       // At this point we have banned topic violations and domain violations(excluding those which are actually ok)
       const topLevelViolations = [...bannedtopicViolations, ...domainViolationsExcludingSome]
@@ -300,7 +300,6 @@ class TranscriptAnalyser {
       'DetectionPrompt.txt'
     )
 
-    // Parse detection response
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
 
     if (!confirmedViolation || !confirmedViolation.deviation || confirmedViolation.deviation.toUpperCase() !== 'YES') {
@@ -359,7 +358,7 @@ class TranscriptAnalyser {
 
     const reasoningResponse = await this.sendRequestWithLogging(
       PromptTemplates.REASONING_PROMPT_SYSTEM(),
-      PromptTemplates.REASONING_PROMPT_USER(classificationResult),
+      PromptTemplates.REASONING_PROMPT_USER(classificationResult, priorMessages),
       'ReasoningPrompt.txt',
       'improvedReasoning'
     )
@@ -508,15 +507,9 @@ class TranscriptAnalyser {
       const userPrompt = PromptTemplates.GREETING_GOODBYE_PROMPT_USER(result.statement)
 
       try {
-        const response = await this.sendRequestWithLogging(systemPrompt, userPrompt, 'GreetingGoodByePrompt.txt')
+        const response = await this.sendRequestWithLogging(systemPrompt, userPrompt, 'GreetingGoodByePrompt.txt', 'isGreetingOrGoodbye')
 
-        if (response && response.isGreetingOrGoodbye && response.isGreetingOrGoodbye.toUpperCase() === 'YES') {
-          if (result.severity === 'HIGH' || result.severity === 'MEDIUM') {
-            filteredResults.push(result)
-            // Might have to refine this in the future. Maybe a better way is to improve the prompt.
-            // console.log('We were going to throw this away because it was a greeting, but were going to keep it because it was misuse:', response)
-          }
-        } else {
+        if (!(response && response.toUpperCase() === 'YES')) {
           filteredResults.push(result)
         }
       } catch (error) {
