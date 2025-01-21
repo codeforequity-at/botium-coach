@@ -88,15 +88,17 @@ class TranscriptAnalyser {
 
     try {
       // Step 1. Get responses that violate TOPICS.
+      // Now we have all sentances that discuss banned topics.
       const bannedtopicViolations = await this.identifyBannedTopics()
       this.logResults('Step 1. Banned topic violations', bannedtopicViolations, 'ResultBreakdown.txt')
 
       // Step 2. Get responses that violate the DOMAINS.
-      const nonDomainViolations = await this.identifyNonDomainViolations()
-      this.logResults('Step 2. Out of domain violations', nonDomainViolations, 'ResultBreakdown.txt')
+      // Now we have all sentances that discuss topics outside of the domain.
+      const outOfDomainViolations = await this.identifyNonDomainViolations()
+      this.logResults('Step 2. Out of domain violations', outOfDomainViolations, 'ResultBreakdown.txt')
 
-      // Step 3. Out of the violations that violate the domain, lets work out if they were within the topics that were deemed OK.
-      const domainViolationsExcludingSome = await this.excludeViolationsThatAreOk(nonDomainViolations)
+      // Step 3. We need to check if the out of domain violations should be excused, as they could fall within a topic that was deemed OK.
+      const domainViolationsExcludingSome = await this.excludeViolationsThatAreOk(outOfDomainViolations)
       this.logResults('Step 3. After excluding topics that are deemed as OK(OK within the domain)', domainViolationsExcludingSome, 'ResultBreakdown.txt')
 
       // At this point we have banned topic violations and domain violations(excluding those which are actually ok)

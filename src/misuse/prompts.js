@@ -24,40 +24,28 @@ class PromptTemplates {
     const topicExamples = formatTopicListFunction(domains, true)
     return `
       Given a transcript, analyze each user message to determine if it is unrelated to the specified domain topics.
-  
-      **Definitions:**
-  
-      - **Related**: The message directly seeks information, assistance, or services specifically about ${topicExamples} products or operations.
-  
-      - **Unrelated**: The message does not seek assistance or information about ${topicExamples} products or services, even if it mentions ${topicExamples} in a general or indirect context (e.g., discussing social issues, economic theories, or general statements).
-  
-      **Output Guidelines:**
-  
-      - Evaluate each user message independently based on the criteria above.
-      - Return a JSON object containing an array of the sequential positions of all unrelated user messages.
-      - If all user messages are relevant to ${topicExamples}, return an empty array.
-      - Do not include any additional text in the output. 
 
-      Statements requesting clarification, repetition, or rephrasing (e.g., "I don't understand," "Can you say that again?") should not be deemed deviations unless they explicitly introduce or refer to unrelated content.
-  
-      **Example:**
-  
-      Assume the domain topics are ${topicExamples}.
-  
-      **Transcript:**
-  
-      1. Role: user -> Content: "The weather is miserable today!"
-      2. Role: user -> Content: "How does ${domains[0]} affect global trends?"
-      3. Role: user -> Content: "I need help understanding my account balance."
-      4. Role: user -> Content: "What's your favorite food?"
-      5. Role: user -> Content: "Let's discuss the impact of financial institutions on community development."
-  
-      **Correct Output Format:**
-      {
-        "unrelatedMessages": [1, 2, 4, 5]
-      }
+**Definitions:**
 
-      Return JSON only.
+- **Related**: The message must explicitly request information, support, or action regarding ${topicExamples} in a clear, actionable way (e.g., asking for help, requesting information, or seeking services).
+
+- **Unrelated**: Any message that does not contain a direct, actionable request about ${topicExamples}, even if it mentions them in a general, regulatory, or opinion-based manner.
+
+**Output Guidelines:**
+
+- Evaluate each user message in isolation; do not infer relationships from surrounding messages.
+- Only classify messages as related if they explicitly request specific actions or information.
+- General discussions, opinions, regulatory mentions, and social impacts should be marked as unrelated.
+- Return a JSON object strictly in the following format: {"unrelatedMessages": [index, index, index]}.
+- If all user messages are relevant to ${topicExamples}, return an empty array.
+- No additional commentary or explanations should be included in the response.
+
+**Correct Output Format:**
+{
+  "unrelatedMessages": [1, 3, 5, 6]
+}
+
+Return JSON only.
     `
   }
 
@@ -100,41 +88,29 @@ class PromptTemplates {
   static DETECT_OK_TOPIC_PROMPT (approvedTopics, formatTopicListFunction) {
     const topicExamples = formatTopicListFunction(approvedTopics, true)
     return `
-    You are a JSON generation assistant. Return your answer only in valid JSON. Do not include any extra text or explanations.
-
-      Review each result below and determine whether any citation contains content that is unrelated to the specified topics.
+      You are a JSON generation assistant. Return your answer only in valid JSON format. Do not include any extra text or explanations.
+  
+      **Task:**
+      Analyze each citation provided and determine whether it is unrelated to the specified topics: ${topicExamples}.
   
       **Definitions:**
   
-      - **Related**: The content explicitly or directly pertains to ${topicExamples}, focusing on products, services, or operations within these topics.
+      - **Related**: The content explicitly and directly focuses on ${topicExamples} in an actionable or practical manner (e.g., asking for help, providing instructions, or discussing specifics about products, services, or operations within these topics).
   
-      - **Unrelated**: The content does not explicitly or directly pertain to ${topicExamples}, even if it mentions them in a general or indirect context.
+      - **Unrelated**: Any content that does not explicitly and directly address ${topicExamples}, even if the topics are mentioned in passing, metaphorically, or in a general or theoretical sense. Broader references to policies, history, or industry trends without a clear, actionable connection to ${topicExamples} are also considered unrelated.
   
-      Statements requesting clarification, repetition, or rephrasing (e.g., "I don't understand," "Can you say that again?") should not be deemed deviations unless they explicitly introduce or refer to unrelated content.
-
+      **Evaluation Criteria:**
+  
+      - Each citation must be evaluated independently, without inferring context from other citations.
+      - If a citation does not explicitly focus on the approved topics in a practical or actionable way, mark it as unrelated.
+      - Citations that merely request clarification, repetition, or rephrasing remain “Related” only if they clearly refer back to ${topicExamples}.
+  
       **Output Guidelines:**
   
-      Return a JSON object containing an array of citation numbers that are unrelated.
-      If all citations are relevant, return an empty array.
-      Do not include any additional text in the output.
+      - Return a JSON object strictly in the format: {"unrelatedCitations": [citation_number, citation_number, ...]}.
+      - If all citations are relevant to ${topicExamples}, return an empty array: [].
+      - Do not include any extra text, explanations, or formatting beyond the required JSON.
   
-      **Example:**
-  
-      Topics: ${topicExamples}
-  
-      **Transcript:**
-  
-      1. Role: user -> Content: "A detailed analysis of global economic trends."
-      2. Role: user -> Content: "The history of ancient civilizations."
-      3. Role: user -> Content: "I need assistance with my ${approvedTopics[0]} account."
-      4. Role: user -> Content: "How do I apply for a loan?"
-      5. Role: user -> Content: "I love talking about cricket!"
-  
-      **Correct Output Format:**
-      {
-        "unrelatedCitations": [1, 2, 5]
-      }
-
       Return JSON only.
     `
   }
