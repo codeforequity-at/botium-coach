@@ -32,7 +32,7 @@ class lLMHelper {
     let response = null
     let content = null
     try {
-      response = await this.llm.call(messages)
+      response = await this.llm.invoke(messages)
 
       // Handle different response structures. This works for openai and llama, however we might need to handle other providers differently.
       // The problem is that different provider return the content in different ways.
