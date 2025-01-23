@@ -1,5 +1,4 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime')
-// const { BedrockRuntimeClient, InvokeModelCommand } = require('C:/Users/Brandon Young/source/repos/misuse/botium-misuse-console-app/node_modules/@aws-sdk/client-bedrock-runtime');
 
 class LlamaModelClient {
   constructor (region = 'us-east-1', modelId = 'us.meta.llama3-2-90b-instruct-v1:0') {
