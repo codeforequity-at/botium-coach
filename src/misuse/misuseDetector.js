@@ -20,12 +20,12 @@ class MisuseDetector {
       llm: this.llm
     }, this.loggingFunction)
 
-    const misUseResults = await conversationTracker.performDistractionConversations(
+    const misuseResults = await conversationTracker.performDistractionConversations(
       this.params.distractionTopics,
       this.params.numberOfCycles
     )
 
-    return misUseResults
+    return misuseResults
   }
 }
 
