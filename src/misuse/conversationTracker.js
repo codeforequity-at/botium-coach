@@ -1,4 +1,4 @@
-const OpenAIHelper = require('./llmProviders/LLMHelper.js')
+const LLMHelper = require('./llmProviders/LLMHelper.js')
 const { startContainer, stopContainer } = require('./driverHelper.js')
 const { TranscriptAnalyser } = require('./transcriptAnalyser.js')
 const Common = require('./common.js')
@@ -27,7 +27,7 @@ class ConversationTracker {
       throw new Error('LLM is required for ConversationTracker')
     }
     this.llm = params.llm
-    this.llmHelper = new OpenAIHelper(this.llm)
+    this.llmHelper = new LLMHelper(this.llm)
   }
 
   getConversationHistory () {
@@ -186,7 +186,7 @@ class ConversationTracker {
         const persuasionTypeIndex = cycle * distractionTopics.length + topicIndex
         const persuasionType = persuasionTechniqueTypes[persuasionTypeIndex]
 
-        console.log('Using persuasion technique for this loop:', persuasionType)
+        this.logger('Using persuasion technique for this loop:', persuasionType)
 
         // This is where we get the two bots to have a conversation.
         const misUseResults = await this.performConversationAndDetermineMisuse((cycle + 1), topic, persuasionType)

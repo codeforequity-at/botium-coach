@@ -1,7 +1,8 @@
-const OpenAIHelper = require('./llmProviders/LLMHelper.js')
+const LLMHelper = require('./llmProviders/LLMHelper.js')
 const Common = require('./common.js')
 const PromptTemplates = require('./prompts.js')
 const TestDataBuilder = require('./testResultBuilder.js')
+const _ = require('lodash')
 
 class TranscriptAnalyser {
   constructor ({
@@ -33,7 +34,7 @@ class TranscriptAnalyser {
       throw new Error('LLM is required for ConversationTracker')
     }
     this.llm = llm
-    this.llmHelper = new OpenAIHelper(this.llm)
+    this.llmHelper = new LLMHelper(this.llm)
   }
 
   async excludeViolationsThatAreOk (violations) {
@@ -373,7 +374,7 @@ class TranscriptAnalyser {
   parseDetectionResponse (response) {
     try {
       // If response is already an object, use it directly
-      if (typeof response === 'object' && response !== null) {
+      if (!_.isNil(response) && _.isObject(response)) {
         const { statement, context, deviation, reason, inappropriate } = response
 
         return {
@@ -415,7 +416,7 @@ class TranscriptAnalyser {
   parseClassificationResponse (response, statement, context) {
     try {
       // If response is already an object, use it directly
-      if (typeof response === 'object' && response !== null) {
+      if (!_.isNil(response) && _.isObject(response)) {
         const { severity, reason, category } = response
 
         return { statement, severity, reason, category, context }
@@ -722,7 +723,7 @@ class TranscriptAnalyser {
       // Subtract 1 from index to match the array's 0-based indexing
       const message = transcript[index - 1]
 
-      // Ensure it’s a user message and its not empty.
+      // Ensure it's a user message and its not empty.
       if (message && message.role === 'user' && message.statement) {
         return message.statement + '\n'
       }
