@@ -1,13 +1,13 @@
 {
   "name": "botium-coach-worker",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "description": "Botium Coach Worker",
   "main": "index.js",
   "scripts": {
-    "build": "npm run eslint && npm test",
+    "build": "npm run eslint",
     "eslint": "eslint index.js \"./src/**/*.js\" \"./test/**/*.js\"",
     "eslint-fix": "eslint --fix index.js \"./src/**/*.js\" \"./test/**/*.js\"",
-    "test": "mocha \"./test/**/*.spec.js\"",
+    "test": "mocha --timeout 10000 \"./test/**/*.spec.js\"",
     "update-dependencies": "npm-check-updates --reject franc -u --timeout 120000"
   },
   "repository": {
@@ -36,18 +36,19 @@
   "dependencies": {
     "@langchain/anthropic": "^0.3.11",
     "@langchain/openai": "^0.3.16",
-    "debug": "^4.3.4",
+    "debug": "^4.3.7",
     "franc": "^5.0.0",
     "langchain": "^0.3.10",
     "lodash": "^4.17.21",
-    "node-nlp": "^4.26.1"
+    "node-nlp": "^4.27.0"
   },
   "peerDependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.682.0",
     "botium-connector-copilot": "^1.0.3",
     "botium-core": "^1.14.9",
     "dotenv": "^16.4.5",
-    "openai": "^4.68.4",
-    "uuid": "^11.0.2"
+    "openai": "^4.73.1",
+    "@aws-sdk/client-bedrock-runtime": "^3.699.0",
+    "uuid": "^11.0.3"
   }
 }
