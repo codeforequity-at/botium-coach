@@ -88,14 +88,17 @@ class TranscriptAnalyser {
     this.logger('', this.uniqueTimestamp)
 
     try {
-      // Step 1. Get responses that violate TOPICS.
-      // Now we have all sentances that discuss banned topics.
-      const bannedtopicViolations = await this.identifyBannedTopics()
-      this.logResults('Step 1. Banned topic violations', bannedtopicViolations, 'ResultBreakdown.txt')
+      // Step 1 and Steps 2 & 3 can be run in parallel
+      const [bannedtopicViolations, outOfDomainViolations] = await Promise.all([
+        // Step 1. Get responses that violate TOPICS.
+        // Now we have all sentences that discuss banned topics.
+        this.identifyBannedTopics(),
 
-      // Step 2. Get responses that violate the DOMAINS.
-      // Now we have all sentances that discuss topics outside of the domain.
-      const outOfDomainViolations = await this.identifyNonDomainViolations()
+        // Step 2. Get responses that violate the DOMAINS.
+        // Now we have all sentences that discuss topics outside of the domain.
+        this.identifyNonDomainViolations()
+      ])
+
       this.logResults('Step 2. Out of domain violations', outOfDomainViolations, 'ResultBreakdown.txt')
 
       // Step 3. We need to check if the out of domain violations should be excused, as they could fall within a topic that was deemed OK.
@@ -107,7 +110,6 @@ class TranscriptAnalyser {
 
       // Step 4. Get responses that are rude, offesnive or innapropriate
       const inaprpriateViolations = await this.identifyInapropriateViolations()
-      this.logResults('Step 4. Offensive violations', inaprpriateViolations, 'ResultBreakdown.txt')
 
       // Step 5. Removing any duplictes that might exist.
       const uniqueViolations = this.getUniqueViolations(topLevelViolations, inaprpriateViolations)
@@ -117,7 +119,6 @@ class TranscriptAnalyser {
       const confirmedVilations = await this.confirmViolations(uniqueViolations, history)
       this.logResults('Step 6. After confirming violations', confirmedVilations, 'ResultBreakdown.txt')
 
-      // Need to split this step out into indvidual steps as there are multiple here.
       // Step 7. Categorised and improve reasoning(each one is done individualy).
       let gradedResults = await this.classifyAndImproveReasoning(confirmedVilations, history)
       this.logResults('Step 7. After grading results', gradedResults, 'ResultBreakdown.txt')
@@ -233,11 +234,8 @@ class TranscriptAnalyser {
     const forbiddenTopics = this.commonInstance.formatTopicList(this.forbiddenTopics, true)
 
     const historyCopy = [...history]
-
-    // Get prior messages for context
     const priorMessages = this.getPrecedingMessages(violation.index, historyCopy, true)
 
-    // Step 1: Detection
     let detectionSystemPrompt
     if (violation.type === 'banned') {
       detectionSystemPrompt = PromptTemplates.DETECT_BANNED_TOPIC_SYSTEM(violation.statement, forbiddenTopics)
@@ -255,29 +253,22 @@ class TranscriptAnalyser {
       detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
     }
 
-    // console.log('--------------------------------')
-    // console.log('violation.statement: ', violation)
-    // console.log('DetectionSystemPrompt: ' + detectionSystemPrompt)
-    // console.log('DetectionUserPrompt: ' + detectionUserPrompt)
-    // console.log('--------------------------------')
-
     const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'DetectionPrompt.txt')
-
-    // console.log('DetectionResponse: ', detectionResponse)
 
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
 
+    let result = false
     if (violation.type === 'inappropriate') {
       if (confirmedViolation && confirmedViolation.inappropriate === 'YES') {
-        return true
+        result = true
       }
     } else {
       if (confirmedViolation && confirmedViolation.deviation === 'YES') {
-        return true
+        result = true
       }
     }
 
-    return false
+    return result
   }
 
   async classifyAndImproveReason (violation, history) {
@@ -286,7 +277,6 @@ class TranscriptAnalyser {
 
     const historyCopy = [...history]
 
-    // Get prior messages for context
     const priorMessages = this.getPrecedingMessages(violation.index, historyCopy, true)
 
     // This is getting the context and the reason. But we are ctually getting that during the confirmatiom stop.
@@ -468,30 +458,24 @@ class TranscriptAnalyser {
     this.logger('\nRemoving repetition requests:', this.uniqueTimestamp)
     this.logger(gradedResults, this.uniqueTimestamp)
 
-    const filteredResults = []
-
-    for (const result of gradedResults) {
-      // console.log('result: ', result)
-
+    const filteredResultsPromises = gradedResults.map(async (result) => {
       const systemPrompt = PromptTemplates.REPITITION_PROMPT_SYSTEM()
       const userPrompt = PromptTemplates.REPITITION_PROMPT_USER(result.statement)
 
-      // console.log('systemPrompt: ', systemPrompt)
-      // console.log('userPrompt: ', userPrompt)
-
       try {
         const response = await this.sendRequestWithLogging(systemPrompt, userPrompt, 'RepititionPrompt.txt', 'isRepetitionRequest')
-        // console.log('response: ', response)
         if (typeof response === 'string' && response.trim().toLowerCase().includes('yes')) {
-          // console.log('Throwing away: ' + result.statement)
+          return null // Indicate that this result should be discarded
         } else {
-          // console.log('Keeping: ' + result.statement)
-          filteredResults.push(result)
+          return result
         }
       } catch (error) {
         console.error('Error identifying repetition request:', error)
+        return null // Optionally discard the result on error
       }
-    }
+    })
+
+    const filteredResults = (await Promise.all(filteredResultsPromises)).filter(Boolean)
 
     this.logger('After removing repetition requests:', this.uniqueTimestamp)
     this.logger(filteredResults, this.uniqueTimestamp)
@@ -547,18 +531,20 @@ class TranscriptAnalyser {
     this.logger('Confirming violations: \n', this.uniqueTimestamp)
     this.logger(violations, this.uniqueTimestamp)
 
-    const confirmedResults = []
-
-    for (const violation of violations) {
+    // These can all be fired off in parallel.
+    const confirmationPromises = violations.map(async (violation) => {
       try {
         const isViolation = await this.isTrueViolation(violation, history)
         if (isViolation === true) {
-          confirmedResults.push(violation)
+          return violation
         }
       } catch (error) {
         console.error('Error grading violation, so ignoring it...', error)
       }
-    }
+      return null // Return null for non-violations or errors
+    })
+
+    const confirmedResults = (await Promise.all(confirmationPromises)).filter(Boolean)
 
     this.logger('Confirmed violations:', this.uniqueTimestamp)
     this.logger(confirmedResults, this.uniqueTimestamp)
@@ -570,20 +556,19 @@ class TranscriptAnalyser {
     this.logger('Grading results: \n', this.uniqueTimestamp)
     this.logger(violations, this.uniqueTimestamp)
 
-    const gradedResultsList = []
-
-    for (const violation of violations) {
-      let gradedViolation
+    const gradedResultsPromises = violations.map(async (violation) => {
       try {
-        gradedViolation = await this.classifyAndImproveReason(violation, history)
-
-        if (gradedViolation != null) {
-          gradedResultsList.push(gradedViolation)
+        const gradedViolation = await this.classifyAndImproveReason(violation, history)
+        if (!_.isNil(gradedViolation)) {
+          return gradedViolation
         }
       } catch (error) {
         console.error('Error grading violation, so ignoring it...', error)
+        return null
       }
-    }
+    })
+
+    const gradedResultsList = (await Promise.all(gradedResultsPromises)).filter(Boolean)
 
     this.logger('Graded results:', this.uniqueTimestamp)
     this.logger(gradedResultsList, this.uniqueTimestamp)
