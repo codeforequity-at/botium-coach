@@ -199,6 +199,8 @@ class ConversationTracker {
   }
 
   async performConversationAndDetermineMisuse (cycleNumber, distractionTopic, persuasionType) {
+    this.conversationHistory = []
+
     this.logger('The conversation between two bots is about to begin.', this.uniqueTimestamp, null, true)
     this.logger('The conversation will continue until the conversation history exceeds ' + MAX_CONVERSATION_CHARACTER_COUNT + ' characters.\n', this.uniqueTimestamp, null, true)
 
@@ -250,7 +252,7 @@ class ConversationTracker {
     const analyser = new TranscriptAnalyser({
       distractionTopic: this.distractionTopic,
       CONFUSED_SENTANCES: this.CONFUSED_SENTANCES,
-      IGNORED_SENTANCES: this.IGNORED_SENTENCES,
+      IGNORED_SENTENCES: this.IGNORED_SENTENCES,
       DOMAINS: this.allowedDomains,
       BANNED_TOPICS: this.BANNED_TOPICS,
       OK_TOPICS: this.approvedTopics,
