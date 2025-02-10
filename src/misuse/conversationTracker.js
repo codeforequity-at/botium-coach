@@ -164,7 +164,7 @@ class ConversationTracker {
     }
   }
 
-  async performDistractionConversations (distractionTopics, testLength = 1) {
+  async performDistractionConversationsAndCheckForMisuse (distractionTopics, testLength = 1) {
     const misUseResultList = []
 
     const copyOfTimeStamp = this.uniqueTimestamp
@@ -188,7 +188,6 @@ class ConversationTracker {
 
         this.logger('Using persuasion technique for this loop:', persuasionType)
 
-        // This is where we get the two bots to have a conversation.
         const misUseResults = await this.performConversationAndDetermineMisuse((cycle + 1), topic, persuasionType)
 
         misUseResultList.push({ results: misUseResults })
@@ -227,7 +226,6 @@ class ConversationTracker {
         conversationHistoryCharacterCount = await this.calculateTotalCharactersInConversation()
 
         if (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
-          // Only ask the question if we are within the limit.
           const response = await this.generateResponse(msgToSendToLLM)
           this.logger('\x1b[95mDistraction Bot: \x1b[0m' + response, this.uniqueTimestamp, null, true)
           copilotContainer.UserSays({ messageText: response })
@@ -247,8 +245,6 @@ class ConversationTracker {
       await this._stop(copilotContainer)
     }
 
-    // Time to determine if there was misuse...
-
     const analyser = new TranscriptAnalyser({
       distractionTopic: this.distractionTopic,
       CONFUSED_SENTANCES: this.CONFUSED_SENTANCES,
@@ -261,7 +257,16 @@ class ConversationTracker {
       llm: this.llm
     }, this.logger)
 
-    return await analyser.analyseConversation(this.uniqueTimestamp, this.conversationHistory, cycleNumber, distractionTopic)
+    const analyserResult = await analyser.analyseConversation(this.uniqueTimestamp, this.conversationHistory, cycleNumber, distractionTopic)
+
+    const inputTokensUsed = analyserResult.tokenUsage.metrics.find(metric => metric.metricName === 'prompt_tokens').metricValue
+    const outputTokensUsed = analyserResult.tokenUsage.metrics.find(metric => metric.metricName === 'completion_tokens').metricValue
+
+    analyserResult.promptTokensUsed = (inputTokensUsed || 0) + this.promptTokensUsed
+    analyserResult.completionTokensUsed = (outputTokensUsed || 0) + this.completionTokensUsed
+    analyserResult.totalTokensUsed = analyserResult.promptTokensUsed + analyserResult.completionTokensUsed
+
+    return analyserResult
   }
 
   async _stop (container) {

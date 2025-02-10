@@ -38,17 +38,17 @@
     "@langchain/openai": "^0.3.16",
     "debug": "^4.3.7",
     "franc": "^5.0.0",
+    "gpt-3-encoder": "^1.1.4",
     "langchain": "^0.3.10",
     "lodash": "^4.17.21",
     "node-nlp": "^4.27.0"
   },
   "peerDependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.682.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.699.0",
     "botium-connector-copilot": "^1.0.3",
     "botium-core": "^1.14.9",
     "dotenv": "^16.4.5",
     "openai": "^4.73.1",
-    "@aws-sdk/client-bedrock-runtime": "^3.699.0",
     "uuid": "^11.0.3"
   }
 }

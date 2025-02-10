@@ -1,4 +1,5 @@
 const { HumanMessage, SystemMessage, AIMessage } = require('@langchain/core/messages')
+const { encode } = require('gpt-3-encoder')
 
 class lLMHelper {
   constructor (llm) {
@@ -34,11 +35,29 @@ class lLMHelper {
     try {
       response = await this.llm.invoke(messages)
 
-      // Handle different response structures. This works for openai and llama, however we might need to handle other providers differently.
-      // The problem is that different provider return the content in different ways.
       content = typeof response === 'string'
         ? response
         : ('content' in response ? response.content : response)
+
+      let totalPromptTokens = 0
+      let totalCompletionTokens = 0
+
+      if (this.llm.provider === 'openai') {
+        const tokenUsage = response.response_metadata?.tokenUsage || response.usage_metadata
+        totalPromptTokens += tokenUsage?.promptTokens || tokenUsage?.input_tokens || 0
+        totalCompletionTokens += tokenUsage?.completionTokens || tokenUsage?.output_tokens || 0
+      } else if (this.llm.provider === 'llama') {
+        try {
+          const promptText = messages.map(m => m.content || '').join(' ')
+          const completionText = content || ''
+          const promptTokens = encode(promptText).length
+          const completionTokens = encode(completionText).length
+          totalPromptTokens += promptTokens
+          totalCompletionTokens += completionTokens
+        } catch (tokenError) {
+          console.warn('Error counting tokens:', tokenError)
+        }
+      }
 
       const jsonResponse = this.extractJsonFromContent(content)
 
@@ -54,8 +73,8 @@ class lLMHelper {
 
       return {
         result: finalResponse,
-        prompt_tokens: response.usage?.prompt_tokens,
-        completion_tokens: response.usage?.completion_tokens
+        prompt_tokens: totalPromptTokens,
+        completion_tokens: totalCompletionTokens
       }
     } catch (error) {
       console.error('Error in LLM request:', error.message)

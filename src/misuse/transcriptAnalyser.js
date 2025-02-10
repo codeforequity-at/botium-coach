@@ -59,15 +59,14 @@ class TranscriptAnalyser {
       forbiddenTopics: this.forbiddenTopics,
       testResult: { cycleNumber, status: 'in_progress' },
       transcriptEntries: this.conversationHistory,
-      tokenUsage: [
-        {
-          provider: 'GPT-4',
-          metrics: [
-            { metricName: 'promptTokensUsed', metricValue: this.promptTokensUsed },
-            { metricName: 'completionTokensUsed', metricValue: this.completionTokensUsed }
-          ]
-        }
-      ],
+      tokenUsage: {
+        provider: this.llm.provider,
+        metrics: [
+          { metricName: 'prompt_tokens', metricValue: this.promptTokensUsed },
+          { metricName: 'completion_tokens', metricValue: this.completionTokensUsed },
+          { metricName: 'total_tokens', metricValue: this.promptTokensUsed + this.completionTokensUsed }
+        ]
+      },
       violationsData: result,
       distractionTopic
     }
@@ -77,7 +76,7 @@ class TranscriptAnalyser {
   async analyseConversation (timeStamp, history, cycleNumber, distractionTopic) {
     this.uniqueTimestamp = timeStamp
     this.conversationHistory = history
-    this.logger('\nIdentifying misuse. Please be patient...', this.uniqueTimestamp, null, true)
+    this.logger('Identifying misuse. Please be patient...', this.uniqueTimestamp, null, true)
 
     this.logger('Remove this log....', this.uniqueTimestamp)
     this.logger('Analysing with the following settings....', this.uniqueTimestamp)
@@ -165,10 +164,6 @@ class TranscriptAnalyser {
 
   gpt4ResponseToArray (input) {
     return input.split('\n').map(sentence => sentence.replace(/"/g, ''))
-  }
-
-  async sendRequestAndUpdateTokens (systemContent = null, userContent = null, messagesAsObject = null, jsonObjectField = null) {
-    return await this.sendLLMRequest(systemContent, userContent, messagesAsObject, jsonObjectField)
   }
 
   async sendLLMRequest (systemContent, userContent, messagesAsObject, jsonObjectField = null) {
@@ -589,21 +584,10 @@ class TranscriptAnalyser {
     return result
   }
 
-  async identifyOffensiveViolations () {
-    this.logger('Identifying if the LLM discussed topics outside of the domain...', this.uniqueTimestamp)
-
-    const result = await this.analyzeNonDomainResults(this.allowedDomains, this.sendRequestAndUpdateTokens.bind(this))
-
-    this.logger('Found violations outside of domain: ', this.uniqueTimestamp)
-    this.logger(result, this.uniqueTimestamp)
-
-    return result
-  }
-
   async identifyNonDomainViolations () {
     this.logger('Identifying if the LLM discussed topics outside of the domain...', this.uniqueTimestamp)
 
-    const result = await this.analyzeNonDomainResults(this.allowedDomains, this.sendRequestAndUpdateTokens.bind(this))
+    const result = await this.analyzeNonDomainResults(this.allowedDomains, this.sendLLMRequest.bind(this))
 
     this.logger('Found violations outside of domain: ', this.uniqueTimestamp)
     this.logger(result, this.uniqueTimestamp)
@@ -635,7 +619,7 @@ class TranscriptAnalyser {
   }
 
   async sendRequestWithLogging (prompt, userMessage, logFileName, jsonObectField = null) {
-    const result = await this.sendRequestAndUpdateTokens(
+    const result = await this.sendLLMRequest(
       prompt, userMessage, null, jsonObectField
     )
 
@@ -668,7 +652,7 @@ class TranscriptAnalyser {
         const bannedTopicsPrompt = PromptTemplates.BANNED_TOPICS_PROMPT(BANNED_TOPICS, formatBulletList)
         const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n')
 
-        const violationIndicies = await this.sendRequestAndUpdateTokens(
+        const violationIndicies = await this.sendLLMRequest(
           bannedTopicsPrompt,
           historyMsg,
           null,
@@ -867,7 +851,7 @@ class TranscriptAnalyser {
     this.logger('PROMPT: \n ' + PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT(), this.uniqueTimestamp, 'CategoriseResultsPrompt2.txt')
     this.logger('Sentences: \n' + resultsToCategorise, this.uniqueTimestamp, 'CategoriseResultsPrompt2.txt')
 
-    const categorisedResults = await this.sendRequestAndUpdateTokens(
+    const categorisedResults = await this.sendLLMRequest(
       [
         PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT(),
         'Sentences: \n' + resultsToCategorise
@@ -893,7 +877,7 @@ class TranscriptAnalyser {
   }
 
   async gradeResults (messagesForGPT) {
-    const results = await this.sendRequestAndUpdateTokens(
+    const results = await this.sendLLMRequest(
       null,
       null,
       messagesForGPT

@@ -20,7 +20,7 @@ class MisuseDetector {
 
     this.turnForbiddenTopicsIntoDistractionTopics()
 
-    const misuseResults = await conversationTracker.performDistractionConversations(
+    const misuseResults = await conversationTracker.performDistractionConversationsAncCheckForMisuse(
       this.params.distractionTopics,
       this.params.numberOfCycles
     )
