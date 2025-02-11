@@ -1,12 +1,45 @@
 const { HumanMessage, SystemMessage, AIMessage } = require('@langchain/core/messages')
 const { encode } = require('gpt-3-encoder')
 
-class lLMHelper {
+class LLMHelper {
   constructor (llm) {
     if (!llm) {
       throw new Error('LLM is not defined')
     }
     this.llm = llm
+    this.retryDelay = 1000 
+    this.maxRetries = 3  
+  }
+
+  async retryWithBackoff(messages) {
+    let retries = 0
+    
+    while (retries < this.maxRetries) {
+      try {
+        return await this.llm.invoke(messages)
+      } catch (error) {
+        if (this.isRateLimitError(error)) {
+          retries++
+          if (retries === this.maxRetries) {
+            throw error
+          }
+          
+          console.warn(`Rate limit hit, waiting ${this.retryDelay}ms before retry ${retries}/${this.maxRetries}`)
+          await new Promise(resolve => setTimeout(resolve, this.retryDelay))
+          
+          // Exponential backoff
+          this.retryDelay *= 2
+        } else {
+          throw error
+        }
+      }
+    }
+  }
+
+  isRateLimitError(error) {
+    return error.message?.includes('Rate limit') || 
+           error.response?.status === 429 ||
+           error.code === 'rate_limit_exceeded'
   }
 
   async sendRequest (messages, jsonObjectField = null) {
@@ -33,7 +66,7 @@ class lLMHelper {
     let response = null
     let content = null
     try {
-      response = await this.llm.invoke(messages)
+      response = await this.retryWithBackoff(messages)
 
       content = typeof response === 'string'
         ? response
@@ -131,4 +164,4 @@ class lLMHelper {
   }
 }
 
-module.exports = lLMHelper
+module.exports = LLMHelper

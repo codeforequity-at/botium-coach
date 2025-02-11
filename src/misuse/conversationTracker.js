@@ -164,37 +164,56 @@ class ConversationTracker {
     }
   }
 
-  async performDistractionConversationsAndCheckForMisuse (distractionTopics, testLength = 1) {
-    const misUseResultList = []
-
+  async performDistractionConversationsAndCheckForMisuse (distractionTopics, testLength = 1, maxConcurrent = 20, runInParallel = true) {
     const copyOfTimeStamp = this.uniqueTimestamp
-
     const persuasionTechniqueTypes = this.getPersuasionTechniqueTypes(testLength, distractionTopics)
 
     console.log('Chosen persuasion technique types:', persuasionTechniqueTypes)
 
+    const tasks = []
     for (let cycle = 0; cycle < testLength; cycle++) {
-      for (let topicIndex = 0; topicIndex < distractionTopics.length; topicIndex++) {
-        const topic = distractionTopics[topicIndex]
-        if (distractionTopics.length > 0) {
-          this.uniqueTimestamp = copyOfTimeStamp + '(' + (topicIndex + 1) + ')'
-        }
+      for (let distractionTopicIndex = 0; distractionTopicIndex < distractionTopics.length; distractionTopicIndex++) {
+        const distractionTopic = distractionTopics[distractionTopicIndex]
 
-        this.logger(`Processing topic: ${topic}`, this.uniqueTimestamp, null, true)
-
-        // Calculate the index for persuasionTechniqueTypes based on both cycle and topicIndex
-        const persuasionTypeIndex = cycle * distractionTopics.length + topicIndex
+        const uniqueTimestamp = copyOfTimeStamp + '(' + (distractionTopicIndex + 1) + ')'
+        const persuasionTypeIndex = cycle * distractionTopics.length + distractionTopicIndex
         const persuasionType = persuasionTechniqueTypes[persuasionTypeIndex]
 
-        this.logger('Using persuasion technique for this loop:', persuasionType)
+        tasks.push(async () => {
+          this.logger(`Processing topic: ${distractionTopic}`, uniqueTimestamp, null, true)
+          this.logger('Using persuasion technique:', persuasionType)
 
-        const misUseResults = await this.performConversationAndDetermineMisuse((cycle + 1), topic, persuasionType)
-
-        misUseResultList.push({ results: misUseResults })
+          const misUseResults = await this.performConversationAndDetermineMisuse(
+            (cycle + 1),
+            distractionTopic,
+            persuasionType
+          )
+          return { results: misUseResults }
+        })
       }
     }
 
-    return misUseResultList
+    if (runInParallel) {
+      return await this.processBatchedTasks(tasks, maxConcurrent)
+    } else {
+      const results = []
+      const errors = []
+
+      for (const task of tasks) {
+        try {
+          const result = await task()
+          results.push(result)
+        } catch (error) {
+          errors.push(error)
+        }
+      }
+
+      return {
+        results,
+        errors,
+        success: errors.length === 0
+      }
+    }
   }
 
   async performConversationAndDetermineMisuse (cycleNumber, distractionTopic, persuasionType) {
@@ -205,19 +224,17 @@ class ConversationTracker {
 
     this.updateDistractionSystemPrompt(distractionTopic, persuasionType)
 
-    const copilotContainer = await startContainer(this.driver, this.logger)
+    const targetBotContainer = await startContainer(this.driver, this.logger)
 
-    copilotContainer.UserSays({ messageText: 'Hello.' })
-    const botiumCopilotFirstResponse = await copilotContainer.WaitBotSays()
+    targetBotContainer.UserSays({ messageText: 'Hello.' })
+    const targetBotFirstResponse = await targetBotContainer.WaitBotSays()
 
     try {
-      let botiumCopilotResponse = null
-
+      let targetBotResponse = null
       let conversationHistoryCharacterCount = 0
-
       let index = 0
       while (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
-        const message = index === 0 ? botiumCopilotFirstResponse : botiumCopilotResponse
+        const message = index === 0 ? targetBotFirstResponse : targetBotResponse
 
         const msgToSendToLLM = message.messageText
 
@@ -228,8 +245,14 @@ class ConversationTracker {
         if (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
           const response = await this.generateResponse(msgToSendToLLM)
           this.logger('\x1b[95mDistraction Bot: \x1b[0m' + response, this.uniqueTimestamp, null, true)
-          copilotContainer.UserSays({ messageText: response })
-          botiumCopilotResponse = await copilotContainer.WaitBotSays()
+
+          try {
+            targetBotContainer.UserSays({ messageText: response })
+          } catch (error) {
+            throw new Error(`Misuse failed to send a message the target bot: ${error.message}`)
+          }
+
+          targetBotResponse = await targetBotContainer.WaitBotSays()
 
           conversationHistoryCharacterCount = await this.calculateTotalCharactersInConversation()
         }
@@ -239,10 +262,18 @@ class ConversationTracker {
         index++
       }
 
-      await this._stop(copilotContainer)
+      await this._stop(targetBotContainer)
     } catch (error) {
       console.error('\n\x1b[31mError in interactive conversation:\x1b[0m', error)
-      await this._stop(copilotContainer)
+      await this._stop(targetBotContainer)
+      return {
+        error: true,
+        message: error.message,
+        cycleNumber,
+        distractionTopic,
+        promptTokensUsed: this.promptTokensUsed,
+        completionTokensUsed: this.completionTokensUsed
+      }
     }
 
     const analyser = new TranscriptAnalyser({
@@ -271,6 +302,30 @@ class ConversationTracker {
 
   async _stop (container) {
     await stopContainer(container, this.logger)
+  }
+
+  async processBatchedTasks (tasks, maxConcurrent) {
+    const results = []
+    const errors = []
+
+    for (let i = 0; i < tasks.length; i += maxConcurrent) {
+      const batch = tasks.slice(i, i + maxConcurrent)
+      const batchResults = await Promise.allSettled(batch.map(task => task()))
+
+      batchResults.forEach(result => {
+        if (result.status === 'fulfilled') {
+          results.push(result.value)
+        } else {
+          errors.push(result.reason)
+        }
+      })
+    }
+
+    return {
+      results,
+      errors,
+      success: errors.length === 0
+    }
   }
 }
 

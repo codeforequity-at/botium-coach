@@ -78,7 +78,6 @@ class TranscriptAnalyser {
     this.conversationHistory = history
     this.logger('Identifying misuse. Please be patient...', this.uniqueTimestamp, null, true)
 
-    this.logger('Remove this log....', this.uniqueTimestamp)
     this.logger('Analysing with the following settings....', this.uniqueTimestamp)
     this.logger('Banned Topics: ' + JSON.stringify(this.forbiddenTopics), this.uniqueTimestamp)
     this.logger('Domains: ' + JSON.stringify(this.allowedDomains), this.uniqueTimestamp)
@@ -255,15 +254,29 @@ class TranscriptAnalyser {
     let result = false
     if (violation.type === 'inappropriate') {
       if (confirmedViolation && confirmedViolation.inappropriate === 'YES') {
-        result = true
+        if(!await this.excuseRefusal(violation.statement, priorMessages)) {
+          result = true
+        }
       }
     } else {
       if (confirmedViolation && confirmedViolation.deviation === 'YES') {
-        result = true
+        if(!await this.excuseRefusal(violation.statement, priorMessages)) {
+          result = true
+        }   
       }
     }
 
     return result
+  }
+
+  async excuseRefusal(statement, priorMessages) {
+    var userPrompt = PromptTemplates.EXCUSE_REFUSING_USER(statement, priorMessages)
+    var systemPrompt = PromptTemplates.EXCUSE_REFUSING_SYSTEM(statement, priorMessages)
+    const response = await this.sendRequestWithLogging(userPrompt, systemPrompt, 'ExcusePrompt.txt', 'excuseRefusal')
+    if(response.toUpperCase() === 'YES') {
+      return true
+    }
+    return false;
   }
 
   async classifyAndImproveReason (violation, history) {
@@ -454,6 +467,11 @@ class TranscriptAnalyser {
     this.logger(gradedResults, this.uniqueTimestamp)
 
     const filteredResultsPromises = gradedResults.map(async (result) => {
+
+      if (!result?.statement) {
+        return null
+      }
+
       const systemPrompt = PromptTemplates.REPITITION_PROMPT_SYSTEM()
       const userPrompt = PromptTemplates.REPITITION_PROMPT_USER(result.statement)
 
@@ -466,7 +484,7 @@ class TranscriptAnalyser {
         }
       } catch (error) {
         console.error('Error identifying repetition request:', error)
-        return null // Optionally discard the result on error
+        return null
       }
     })
 
@@ -631,19 +649,21 @@ class TranscriptAnalyser {
   }
 
   async excludeOKTopicViolations (OK_TOPICS, formatTopicList, nonDomainViolations, conversationHistory) {
-    const okTopicPrompt = PromptTemplates.DETECT_OK_TOPIC_PROMPT(OK_TOPICS, formatTopicList)
-    const outOfDomainResultsAsString = nonDomainViolations.map((statement, index) => `${index + 1}. Role: ${statement.role} -> Statement: "${statement.statement}"`).join('\n')
 
-    const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n')
+    const results = []
+    for (const violation of nonDomainViolations) {      
+      const okTopicPrompt = PromptTemplates.DETECT_OK_TOPIC_PROMPT(OK_TOPICS, formatTopicList)
+      const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n')
+      const userPrompt = `Citation:\n${violation.statement}\n\n${historyMsg}`;
+  
+      let unrelated = await this.sendRequestWithLogging(okTopicPrompt, userPrompt, '3. OKTopicsPrompt.txt', 'unrelatedCitation')
+  
+      if(unrelated){
+        results.push(violation)
+      }     
+    }
 
-    let violationIndices = await this.sendRequestWithLogging(okTopicPrompt, 'Results:\n' + outOfDomainResultsAsString + '\n\n' + historyMsg, '3. OKTopicsPrompt.txt', 'unrelatedCitations')
-
-    violationIndices = this.parseViolationIndices(violationIndices)
-
-    // Watch out for this.
-    const results2 = this.fetchViolatingMessagesFromArray(nonDomainViolations, violationIndices)
-
-    return results2
+    return results
   }
 
   async analyzeBannedTopics (conversationHistory, BANNED_TOPICS, formatBulletList) {
@@ -703,14 +723,7 @@ class TranscriptAnalyser {
   }
 
   fetchViolatingMessagesFromArray (arr, indices) {
-    const resultsWeCareAbout = indices.map(index => {
-      const adjustedIndex = index - 1
-      if (arr[adjustedIndex] !== undefined) {
-        return arr[adjustedIndex]
-      }
-      return null
-    }).filter(item => item !== null)
-    return resultsWeCareAbout
+    return arr.filter(item => indices.includes(item.index))
   }
 
   parseViolationIndices (violationString) {
@@ -718,7 +731,7 @@ class TranscriptAnalyser {
   }
 
   async checkForAnyInapropriateAnswers () {
-    const inapropriateAnswersPrompt = PromptTemplates.DETECT_INAPPROPRIATE_PROMPT()
+    const inapropriateAnswersPrompt = PromptTemplates.DETECT_OFFENSIVE_MESSAGES_PROMPT()
 
     const historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`)
 
@@ -731,28 +744,24 @@ class TranscriptAnalyser {
       'inappropriateMessages'
     )
 
-    // console.log('-> 1 violationIndicies: ', violationIndicies)
 
     const violationIndices = this.parseViolationIndices(violationIndicies)
 
-    // console.log('-> 2 violationIndicies: ', violationIndicies)
 
     const results = violationIndices
       ? violationIndices
         .filter(index => index > 0 && index <= this.conversationHistory.length)
         .map(index => ({
           index,
-          role: this.conversationHistory[index - 1].role, // Include the role (user or assistant)
+          role: this.conversationHistory[index - 1].role,
           statement: this.conversationHistory[index - 1].content,
           type: 'inappropriate'
         }))
       : []
 
-    /// console.log('all results --> ', results)
 
     const usersOnlyResponses = results.filter(message => message.role === 'user')
 
-    // console.log('user only results--> ', results)
 
     this.logger('PROMPT: \n ' + inapropriateAnswersPrompt, this.uniqueTimestamp, '3. InapropriateResponsePrompt.txt')
     this.logger(transcriptAsText, this.uniqueTimestamp, '3. InapropriateResponsePrompt.txt')
@@ -795,6 +804,43 @@ class TranscriptAnalyser {
     this.logger(transcriptAsText, this.uniqueTimestamp, '2. OutOfDomainPrompt.txt')
     this.logger('\n \nLLM RESPONSE: \n' + violationIndicies, this.uniqueTimestamp, '2. OutOfDomainPrompt.txt')
     this.logger('\n' + JSON.stringify(results, null, 2), this.uniqueTimestamp, '2. OutOfDomainPrompt.txt')
+
+    return filteredResults
+  }
+
+  async analyzeOffensiveLanguage() {
+    const offensiveLanguagePrompt = PromptTemplates.DETECT_OFFENSIVE_MESSAGES_PROMPT()
+
+    const historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`)
+
+    const transcriptAsText = 'Transcript:\n' + historyAsString.join('\n')
+
+    const violationIndicies = await this.sendRequestWithLogging(
+      offensiveLanguagePrompt,
+      transcriptAsText,
+      'OffensiveLanguagePrompt.txt',
+      'offensiveMessages'
+    )
+
+    const violationIndices = this.parseViolationIndices(violationIndicies)
+
+    const results = violationIndices
+      ? violationIndices
+        .filter(index => index > 0 && index <= this.conversationHistory.length)
+        .map(index => ({
+          index,
+          role: this.conversationHistory[index - 1].role,
+          statement: this.conversationHistory[index - 1].content,
+          type: 'offensive'
+        }))
+      : []
+
+    const filteredResults = results.filter(message => message.role === 'user')
+
+    this.logger('PROMPT: \n ' + offensiveLanguagePrompt, this.uniqueTimestamp, '2. OffensiveLanguagePrompt.txt')
+    this.logger(transcriptAsText, this.uniqueTimestamp, '2. OffensiveLanguagePrompt.txt')
+    this.logger('\n \nLLM RESPONSE: \n' + violationIndicies, this.uniqueTimestamp, '2. OffensiveLanguagePrompt.txt')
+    this.logger('\n' + JSON.stringify(results, null, 2), this.uniqueTimestamp, '2. OffensiveLanguagePrompt.txt')
 
     return filteredResults
   }

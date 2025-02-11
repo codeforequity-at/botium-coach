@@ -12,7 +12,7 @@ class MisuseDetector {
     this.llm = params.llm
   }
 
-  async detectMisuse () {
+  async detectMisuse (maxConcurrent = 20, runInParallel = true) {
     const conversationTracker = new ConversationTracker({
       ...this.params,
       llm: this.llm
@@ -20,12 +20,14 @@ class MisuseDetector {
 
     this.turnForbiddenTopicsIntoDistractionTopics()
 
-    const misuseResults = await conversationTracker.performDistractionConversationsAncCheckForMisuse(
+    const misuseResults = await conversationTracker.performDistractionConversationsAndCheckForMisuse(
       this.params.distractionTopics,
-      this.params.numberOfCycles
+      this.params.numberOfCycles,
+      maxConcurrent,
+      runInParallel
     )
 
-    return misuseResults
+    return misuseResults.results
   }
 
   turnForbiddenTopicsIntoDistractionTopics () {
