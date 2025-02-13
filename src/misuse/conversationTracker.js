@@ -86,8 +86,9 @@ class ConversationTracker {
     return this.prepareMessages()
   }
 
-  async generateResponse (prompt) {
-    const messages = this.prepareMessagesForResponse(prompt)
+  async generateResponse (prompt, localPrimerMessage) {
+    const messages = this.prepareMessagesForResponse(prompt);
+    messages.unshift(localPrimerMessage);
 
     try {
       return await this.generateLLMResponse(messages)
@@ -109,11 +110,14 @@ class ConversationTracker {
 
   updateDistractionSystemPrompt (topic, persuasionType) {
     const prompt = PromptTemplates.DISTRACTION_PROMPT(topic, persuasionType, true)
-
-    this.primerMessage.content = prompt
-      .replace(/{DISTRACTION}/g, topic)
-      .replace(/{DOMAIN}/g, this.allowedDomains[0])
-  }
+  
+    return {
+      ...this.primerMessage, // Keep existing structure
+      content: prompt
+        .replace(/{DISTRACTION}/g, topic)
+        .replace(/{DOMAIN}/g, this.allowedDomains[0])
+    }
+  }  
 
   async calculateTotalCharactersInConversation () {
     const totalCharacterCount = this.conversationHistory.reduce((acc, message) => {
@@ -222,7 +226,7 @@ class ConversationTracker {
     this.logger('The conversation between two bots is about to begin.', this.uniqueTimestamp, null, true)
     this.logger('The conversation will continue until the conversation history exceeds ' + MAX_CONVERSATION_CHARACTER_COUNT + ' characters.\n', this.uniqueTimestamp, null, true)
 
-    this.updateDistractionSystemPrompt(distractionTopic, persuasionType)
+    const localPrimerMessage = this.updateDistractionSystemPrompt(distractionTopic, persuasionType);
 
     const targetBotContainer = await startContainer(this.driver, this.logger)
 
@@ -243,8 +247,8 @@ class ConversationTracker {
         conversationHistoryCharacterCount = await this.calculateTotalCharactersInConversation()
 
         if (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
-          const response = await this.generateResponse(msgToSendToLLM)
-          this.logger('\x1b[95mDistraction Bot: \x1b[0m' + response, this.uniqueTimestamp, null, true)
+          const response = await this.generateResponse(msgToSendToLLM, localPrimerMessage)
+          this.logger('\x1b[95mDistraction Bot(distract direction -> '+distractionTopic+'): \x1b[0m' + response, this.uniqueTimestamp, null, true)
 
           try {
             targetBotContainer.UserSays({ messageText: response })
