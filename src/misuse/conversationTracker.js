@@ -222,12 +222,15 @@ class ConversationTracker {
 
   async performConversationAndDetermineMisuse (cycleNumber, distractionTopic, persuasionType) {
     let localConversationHistory = [];
-
-    this.logger('The conversation between two bots is about to begin.', this.uniqueTimestamp, null, true);
-    this.logger('The conversation will continue until the conversation history exceeds ' + MAX_CONVERSATION_CHARACTER_COUNT + ' characters.\n', this.uniqueTimestamp, null, true);
+    let localPromptTokensUsed = 0;
+    let localCompletionTokensUsed = 0;
+    const localUniqueTimestamp = this.uniqueTimestamp + `(${cycleNumber})`;
+    const localAllowedDomains = [...this.allowedDomains];
+    
+    this.logger('The conversation between two bots is about to begin.', localUniqueTimestamp, null, true);
+    this.logger('The conversation will continue until the conversation history exceeds ' + MAX_CONVERSATION_CHARACTER_COUNT + ' characters.\n', localUniqueTimestamp, null, true);
 
     const localPrimerMessage = this.updateDistractionSystemPrompt(distractionTopic, persuasionType);
-
     const targetBotContainer = await startContainer(this.driver, this.logger);
 
     targetBotContainer.UserSays({ messageText: 'Hello.' });
@@ -242,14 +245,13 @@ class ConversationTracker {
             const message = index === 0 ? targetBotFirstResponse : targetBotResponse;
             const msgToSendToLLM = message.messageText;
 
-            this.logger('\x1b[36m' + this.allowedDomains[0].charAt(0).toUpperCase() + this.allowedDomains[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToLLM + '\n', this.uniqueTimestamp, null, true);
+            this.logger('\x1b[36m' + localAllowedDomains[0].charAt(0).toUpperCase() + localAllowedDomains[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToLLM + '\n', localUniqueTimestamp, null, true);
 
             conversationHistoryCharacterCount = localConversationHistory.reduce((acc, msg) => acc + msg.content.length, 0);
 
             if (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
                 const response = await this.generateResponse(msgToSendToLLM, localPrimerMessage);
-
-                this.logger('\x1b[95mDistraction Bot (distract direction -> '+distractionTopic+'): \x1b[0m' + response, this.uniqueTimestamp, null, true);
+                this.logger('\x1b[95mDistraction Bot (distract direction -> '+distractionTopic+'): \x1b[0m' + response, localUniqueTimestamp, null, true);
 
                 try {
                     targetBotContainer.UserSays({ messageText: response });
@@ -279,30 +281,30 @@ class ConversationTracker {
             message: error.message,
             cycleNumber,
             distractionTopic,
-            promptTokensUsed: this.promptTokensUsed,
-            completionTokensUsed: this.completionTokensUsed
+            promptTokensUsed: localPromptTokensUsed,
+            completionTokensUsed: localCompletionTokensUsed
         };
     }
 
     const analyser = new TranscriptAnalyser({
         distractionTopic,
-        CONFUSED_SENTANCES: this.CONFUSED_SENTANCES,
-        IGNORED_SENTENCES: this.IGNORED_SENTENCES,
-        DOMAINS: this.allowedDomains,
-        BANNED_TOPICS: this.BANNED_TOPICS,
-        OK_TOPICS: this.approvedTopics,
+        CONFUSED_SENTANCES: [...this.CONFUSED_SENTANCES],
+        IGNORED_SENTENCES: [...this.IGNORED_SENTENCES],
+        DOMAINS: localAllowedDomains,
+        BANNED_TOPICS: [...this.BANNED_TOPICS],
+        OK_TOPICS: [...this.approvedTopics],
         conversationHistory: localConversationHistory,
-        uniqueTimestamp: this.uniqueTimestamp,
+        uniqueTimestamp: localUniqueTimestamp,
         llm: this.llm
     }, this.logger);
 
-    const analyserResult = await analyser.analyseConversation(this.uniqueTimestamp, localConversationHistory, cycleNumber, distractionTopic);
+    const analyserResult = await analyser.analyseConversation(localUniqueTimestamp, localConversationHistory, cycleNumber, distractionTopic);
 
     const inputTokensUsed = analyserResult.tokenUsage.metrics.find(metric => metric.metricName === 'prompt_tokens').metricValue;
     const outputTokensUsed = analyserResult.tokenUsage.metrics.find(metric => metric.metricName === 'completion_tokens').metricValue;
 
-    analyserResult.promptTokensUsed = (inputTokensUsed || 0) + this.promptTokensUsed;
-    analyserResult.completionTokensUsed = (outputTokensUsed || 0) + this.completionTokensUsed;
+    analyserResult.promptTokensUsed = (inputTokensUsed || 0) + localPromptTokensUsed;
+    analyserResult.completionTokensUsed = (outputTokensUsed || 0) + localCompletionTokensUsed;
     analyserResult.totalTokensUsed = analyserResult.promptTokensUsed + analyserResult.completionTokensUsed;
 
     return analyserResult;
