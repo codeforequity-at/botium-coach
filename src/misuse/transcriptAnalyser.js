@@ -176,7 +176,7 @@ class TranscriptAnalyser {
     const response = await this.llmHelper.sendRequest(messagesAsObject, jsonObjectField)
 
     if (!response) {
-      console.log('No response from LLM')
+      this.logger('No response from LLM', this.uniqueTimestamp, null, true)
       return null
     }
 
@@ -254,29 +254,29 @@ class TranscriptAnalyser {
     let result = false
     if (violation.type === 'inappropriate') {
       if (confirmedViolation && confirmedViolation.inappropriate === 'YES') {
-        if(!await this.excuseRefusal(violation.statement, priorMessages)) {
+        if (!await this.excuseRefusal(violation.statement, priorMessages)) {
           result = true
         }
       }
     } else {
       if (confirmedViolation && confirmedViolation.deviation === 'YES') {
-        if(!await this.excuseRefusal(violation.statement, priorMessages)) {
+        if (!await this.excuseRefusal(violation.statement, priorMessages)) {
           result = true
-        }   
+        }
       }
     }
 
     return result
   }
 
-  async excuseRefusal(statement, priorMessages) {
-    var userPrompt = PromptTemplates.EXCUSE_REFUSING_USER(statement, priorMessages)
-    var systemPrompt = PromptTemplates.EXCUSE_REFUSING_SYSTEM(statement, priorMessages)
+  async excuseRefusal (statement, priorMessages) {
+    const userPrompt = PromptTemplates.EXCUSE_REFUSING_USER(statement, priorMessages)
+    const systemPrompt = PromptTemplates.EXCUSE_REFUSING_SYSTEM(statement, priorMessages)
     const response = await this.sendRequestWithLogging(userPrompt, systemPrompt, 'ExcusePrompt.txt', 'excuseRefusal')
-    if(response.toUpperCase() === 'YES') {
+    if (response.toUpperCase() === 'YES') {
       return true
     }
-    return false;
+    return false
   }
 
   async classifyAndImproveReason (violation, history) {
@@ -305,7 +305,7 @@ class TranscriptAnalyser {
 
     if (!confirmedViolation || !confirmedViolation.deviation || confirmedViolation.deviation.toUpperCase() !== 'YES') {
       if (!confirmedViolation.inappropriate || confirmedViolation.inappropriate.toUpperCase() === 'YES') {
-        // console.log('But wait its innapropriate, so ths is a violation!')
+        // But wait its innapropriate, so ths is a violation!
       } else {
         return null
       }
@@ -426,12 +426,12 @@ class TranscriptAnalyser {
         const { severity, reason, category } = parsedResponse
         return { statement, severity, reason, category, context }
       } catch (parseError) {
-        console.error('Failed to parse JSON response:', parseError)
-        console.log('This what we tried parsing: ', response)
+        this.logger('Failed to parse JSON response: ' + parseError, this.uniqueTimestamp)
+        this.logger('This what we tried parsing: ' + response, this.uniqueTimestamp)
         return null
       }
     } catch (error) {
-      console.error('Error in parseClassificationResponse:', error)
+      this.logger('Error in parseClassificationResponse: ' + JSON.stringify(error), this.uniqueTimestamp)
       return null
     }
   }
@@ -449,11 +449,11 @@ class TranscriptAnalyser {
         return response
       }
 
-      console.log('incorrect response when grading. Expecting a severity and a reason.', response)
-      console.log(`Attempt ${attempts} failed. Retrying...`)
+      this.logger('Incorrect response when grading. Expecting a severity and a reason: ' + JSON.stringify(response), this.uniqueTimestamp)
+      this.logger(`Attempt ${attempts} failed. Retrying...`, this.uniqueTimestamp)
     }
 
-    console.log(`Failed to grade results after ${maxRetries} attempts.`)
+    this.logger(`Failed to grade results after ${maxRetries} attempts.`, this.uniqueTimestamp)
 
     throw new Error('Failed to grade results...')
   }
@@ -467,7 +467,6 @@ class TranscriptAnalyser {
     this.logger(gradedResults, this.uniqueTimestamp)
 
     const filteredResultsPromises = gradedResults.map(async (result) => {
-
       if (!result?.statement) {
         return null
       }
@@ -649,18 +648,17 @@ class TranscriptAnalyser {
   }
 
   async excludeOKTopicViolations (OK_TOPICS, formatTopicList, nonDomainViolations, conversationHistory) {
-
     const results = []
-    for (const violation of nonDomainViolations) {      
+    for (const violation of nonDomainViolations) {
       const okTopicPrompt = PromptTemplates.DETECT_OK_TOPIC_PROMPT(OK_TOPICS, formatTopicList)
       const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n')
-      const userPrompt = `Citation:\n${violation.statement}\n\n${historyMsg}`;
-  
-      let unrelated = await this.sendRequestWithLogging(okTopicPrompt, userPrompt, '3. OKTopicsPrompt.txt', 'unrelatedCitation')
-  
-      if(unrelated){
+      const userPrompt = `Citation:\n${violation.statement}\n\n${historyMsg}`
+
+      const unrelated = await this.sendRequestWithLogging(okTopicPrompt, userPrompt, '3. OKTopicsPrompt.txt', 'unrelatedCitation')
+
+      if (unrelated) {
         results.push(violation)
-      }     
+      }
     }
 
     return results
@@ -744,9 +742,7 @@ class TranscriptAnalyser {
       'inappropriateMessages'
     )
 
-
     const violationIndices = this.parseViolationIndices(violationIndicies)
-
 
     const results = violationIndices
       ? violationIndices
@@ -759,9 +755,7 @@ class TranscriptAnalyser {
         }))
       : []
 
-
     const usersOnlyResponses = results.filter(message => message.role === 'user')
-
 
     this.logger('PROMPT: \n ' + inapropriateAnswersPrompt, this.uniqueTimestamp, '3. InapropriateResponsePrompt.txt')
     this.logger(transcriptAsText, this.uniqueTimestamp, '3. InapropriateResponsePrompt.txt')
@@ -808,7 +802,7 @@ class TranscriptAnalyser {
     return filteredResults
   }
 
-  async analyzeOffensiveLanguage() {
+  async analyzeOffensiveLanguage () {
     const offensiveLanguagePrompt = PromptTemplates.DETECT_OFFENSIVE_MESSAGES_PROMPT()
 
     const historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`)

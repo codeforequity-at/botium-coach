@@ -7,13 +7,13 @@ class LLMHelper {
       throw new Error('LLM is not defined')
     }
     this.llm = llm
-    this.retryDelay = 1000 
-    this.maxRetries = 3  
+    this.retryDelay = 1000
+    this.maxRetries = 3
   }
 
-  async retryWithBackoff(messages) {
+  async retryWithBackoff (messages) {
     let retries = 0
-    
+
     while (retries < this.maxRetries) {
       try {
         return await this.llm.invoke(messages)
@@ -23,10 +23,10 @@ class LLMHelper {
           if (retries === this.maxRetries) {
             throw error
           }
-          
+
           console.warn(`Rate limit hit, waiting ${this.retryDelay}ms before retry ${retries}/${this.maxRetries}`)
           await new Promise(resolve => setTimeout(resolve, this.retryDelay))
-          
+
           // Exponential backoff
           this.retryDelay *= 2
         } else {
@@ -36,8 +36,8 @@ class LLMHelper {
     }
   }
 
-  isRateLimitError(error) {
-    return error.message?.includes('Rate limit') || 
+  isRateLimitError (error) {
+    return error.message?.includes('Rate limit') ||
            error.response?.status === 429 ||
            error.code === 'rate_limit_exceeded'
   }
@@ -59,9 +59,6 @@ class LLMHelper {
         }
       })
     }
-
-    const systemMessage = messages.find(msg => msg instanceof SystemMessage)?.content
-    const humanMessage = messages.find(msg => msg instanceof HumanMessage)?.content
 
     let response = null
     let content = null
@@ -110,16 +107,7 @@ class LLMHelper {
         completion_tokens: totalCompletionTokens
       }
     } catch (error) {
-      console.error('Error in LLM request:', error.message)
-
-      console.log('The prompt was:' + systemMessage + '\n' + humanMessage)
-      console.log('The response was:', response)
-      console.error('Stack trace:', error.stack)
-
-      console.log('The jsonObjectField:' + jsonObjectField)
-
-      console.log('The original response was:', content)
-
+      console.log('error ->', error)
       return null
     }
   }
@@ -156,9 +144,7 @@ class LLMHelper {
 
         return JSON.parse(sanitizedContent)
       } catch (e) {
-        console.log('Error in extractJsonFromContent:', e)
-        console.log('content ->', content)
-        throw new Error('Failed to parse JSON from response')
+        throw new Error('Failed to parse JSON from response.')
       }
     }
   }

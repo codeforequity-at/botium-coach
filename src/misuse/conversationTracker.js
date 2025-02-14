@@ -86,10 +86,9 @@ class ConversationTracker {
     return this.prepareMessages()
   }
 
-  async generateResponse (prompt, localPrimerMessage) {
-    const messages = this.prepareMessagesForResponse(prompt);
-    messages.unshift(localPrimerMessage);
-
+  async generateResponse (msg, localPrimerMessage) {
+    const messages = this.prepareMessagesForResponse(msg)
+    messages.unshift(localPrimerMessage)
     try {
       return await this.generateLLMResponse(messages)
     } catch (error) {
@@ -100,7 +99,6 @@ class ConversationTracker {
 
   async generateLLMResponse (messages) {
     const { result, prompt_tokens: promptUsed, completion_tokens: completionUsed } = await this.llmHelper.sendRequest(messages)
-
     this.promptTokensUsed += promptUsed || 0
     this.completionTokensUsed += completionUsed || 0
 
@@ -108,16 +106,14 @@ class ConversationTracker {
     return result
   }
 
-  updateDistractionSystemPrompt (topic, persuasionType) {
-    const prompt = PromptTemplates.DISTRACTION_PROMPT(topic, persuasionType, true)
-  
-    return {
-      ...this.primerMessage, // Keep existing structure
+  updateDistractionSystemPrompt (domains, distractionTopic, persuasionType) {
+    const prompt = PromptTemplates.DISTRACTION_PROMPT(distractionTopic, persuasionType, true)
+    const message = {
+      role: 'system',
       content: prompt
-        .replace(/{DISTRACTION}/g, topic)
-        .replace(/{DOMAIN}/g, this.allowedDomains[0])
     }
-  }  
+    return message
+  }
 
   async calculateTotalCharactersInConversation () {
     const totalCharacterCount = this.conversationHistory.reduce((acc, message) => {
@@ -172,20 +168,19 @@ class ConversationTracker {
     const copyOfTimeStamp = this.uniqueTimestamp
     const persuasionTechniqueTypes = this.getPersuasionTechniqueTypes(testLength, distractionTopics)
 
-    console.log('Chosen persuasion technique types:', persuasionTechniqueTypes)
+    this.logger('Chosen persuasion technique types:' + JSON.stringify(persuasionTechniqueTypes), copyOfTimeStamp, null, true)
 
     const tasks = []
     for (let cycle = 0; cycle < testLength; cycle++) {
       for (let distractionTopicIndex = 0; distractionTopicIndex < distractionTopics.length; distractionTopicIndex++) {
         const distractionTopic = distractionTopics[distractionTopicIndex]
 
-        const uniqueTimestamp = copyOfTimeStamp + '(' + (distractionTopicIndex + 1) + ')'
         const persuasionTypeIndex = cycle * distractionTopics.length + distractionTopicIndex
         const persuasionType = persuasionTechniqueTypes[persuasionTypeIndex]
 
         tasks.push(async () => {
-          this.logger(`Processing topic: ${distractionTopic}`, uniqueTimestamp, null, true)
-          this.logger('Using persuasion technique:', persuasionType)
+          this.logger(`Processing topic: ${distractionTopic}`, copyOfTimeStamp, null, true)
+          this.logger('Using persuasion technique:', persuasionType, copyOfTimeStamp, null, true)
 
           const misUseResults = await this.performConversationAndDetermineMisuse(
             (cycle + 1),
@@ -221,95 +216,92 @@ class ConversationTracker {
   }
 
   async performConversationAndDetermineMisuse (cycleNumber, distractionTopic, persuasionType) {
-    let localConversationHistory = [];
-    let localPromptTokensUsed = 0;
-    let localCompletionTokensUsed = 0;
-    const localUniqueTimestamp = this.uniqueTimestamp + `(${cycleNumber})`;
-    const localAllowedDomains = [...this.allowedDomains];
-    
-    this.logger('The conversation between two bots is about to begin.', localUniqueTimestamp, null, true);
-    this.logger('The conversation will continue until the conversation history exceeds ' + MAX_CONVERSATION_CHARACTER_COUNT + ' characters.\n', localUniqueTimestamp, null, true);
+    const localConversationHistory = []
+    const localPromptTokensUsed = 0
+    const localCompletionTokensUsed = 0
+    const localUniqueTimestamp = this.uniqueTimestamp + `(${cycleNumber})`
+    const localAllowedDomains = [...this.allowedDomains]
 
-    const localPrimerMessage = this.updateDistractionSystemPrompt(distractionTopic, persuasionType);
-    const targetBotContainer = await startContainer(this.driver, this.logger);
+    this.logger('The conversation between two bots is about to begin.', localUniqueTimestamp, null, true)
+    this.logger('The conversation will continue until the conversation history exceeds ' + MAX_CONVERSATION_CHARACTER_COUNT + ' characters.\n', localUniqueTimestamp, null, true)
 
-    targetBotContainer.UserSays({ messageText: 'Hello.' });
-    const targetBotFirstResponse = await targetBotContainer.WaitBotSays();
+    const targetBotContainer = await startContainer(this.driver, this.logger)
 
     try {
-        let targetBotResponse = null;
-        let conversationHistoryCharacterCount = 0;
-        let index = 0;
-        
-        while (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
-            const message = index === 0 ? targetBotFirstResponse : targetBotResponse;
-            const msgToSendToLLM = message.messageText;
+      const localPrimerMessage = this.updateDistractionSystemPrompt(localAllowedDomains, distractionTopic, persuasionType)
+      targetBotContainer.UserSays({ messageText: 'Hello.' })
+      const targetBotFirstResponse = await targetBotContainer.WaitBotSays()
+      let targetBotResponse = null
+      let conversationHistoryCharacterCount = 0
+      let index = 0
 
-            this.logger('\x1b[36m' + localAllowedDomains[0].charAt(0).toUpperCase() + localAllowedDomains[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToLLM + '\n', localUniqueTimestamp, null, true);
+      while (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
+        const message = index === 0 ? targetBotFirstResponse : targetBotResponse
+        const msgToSendToLLM = message.messageText
 
-            conversationHistoryCharacterCount = localConversationHistory.reduce((acc, msg) => acc + msg.content.length, 0);
+        this.logger('\x1b[36m' + localAllowedDomains[0].charAt(0).toUpperCase() + localAllowedDomains[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToLLM + '\n', localUniqueTimestamp, null, true)
 
-            if (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
-                const response = await this.generateResponse(msgToSendToLLM, localPrimerMessage);
-                this.logger('\x1b[95mDistraction Bot (distract direction -> '+distractionTopic+'): \x1b[0m' + response, localUniqueTimestamp, null, true);
+        conversationHistoryCharacterCount = localConversationHistory.reduce((acc, msg) => acc + msg.content.length, 0)
 
-                try {
-                    targetBotContainer.UserSays({ messageText: response });
-                } catch (error) {
-                    throw new Error(`Misuse failed to send a message to the target bot: ${error.message}`);
-                }
+        if (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
+          const response = await this.generateResponse(msgToSendToLLM, localPrimerMessage)
+          this.logger('\x1b[95mDistraction Bot (distract direction -> ' + distractionTopic + '): \x1b[0m' + response, localUniqueTimestamp, null, true)
+          try {
+            targetBotContainer.UserSays({ messageText: response })
+          } catch (error) {
+            throw new Error(`Misuse failed to send a message to the target bot: ${error.message}`)
+          }
 
-                targetBotResponse = await targetBotContainer.WaitBotSays();
+          targetBotResponse = await targetBotContainer.WaitBotSays()
 
-                localConversationHistory.push({ role: 'user', content: msgToSendToLLM });
-                localConversationHistory.push({ role: 'assistant', content: response });
+          localConversationHistory.push({ role: 'user', content: msgToSendToLLM })
+          localConversationHistory.push({ role: 'assistant', content: response })
 
-                conversationHistoryCharacterCount = localConversationHistory.reduce((acc, msg) => acc + msg.content.length, 0);
-            }
-
-            console.log('\nConversation character count: ' + conversationHistoryCharacterCount + '/' + MAX_CONVERSATION_CHARACTER_COUNT + '\n');
-
-            index++;
+          conversationHistoryCharacterCount = localConversationHistory.reduce((acc, msg) => acc + msg.content.length, 0)
         }
 
-        await this._stop(targetBotContainer);
+        this.logger('\nConversation character count: ' + conversationHistoryCharacterCount + '/' + MAX_CONVERSATION_CHARACTER_COUNT + '\n', localUniqueTimestamp, null, true)
+
+        index++
+      }
+
+      await this._stop(targetBotContainer)
     } catch (error) {
-        console.error('\n\x1b[31mError in interactive conversation:\x1b[0m', error);
-        await this._stop(targetBotContainer);
-        return {
-            error: true,
-            message: error.message,
-            cycleNumber,
-            distractionTopic,
-            promptTokensUsed: localPromptTokensUsed,
-            completionTokensUsed: localCompletionTokensUsed
-        };
+      this.logger('\n\x1b[31mError in interactive conversation:\x1b[0m', error, localUniqueTimestamp, null, true)
+      await this._stop(targetBotContainer)
+      return {
+        error: true,
+        message: error.message,
+        cycleNumber,
+        distractionTopic,
+        promptTokensUsed: localPromptTokensUsed,
+        completionTokensUsed: localCompletionTokensUsed
+      }
     }
 
     const analyser = new TranscriptAnalyser({
-        distractionTopic,
-        CONFUSED_SENTANCES: [...this.CONFUSED_SENTANCES],
-        IGNORED_SENTENCES: [...this.IGNORED_SENTENCES],
-        DOMAINS: localAllowedDomains,
-        BANNED_TOPICS: [...this.BANNED_TOPICS],
-        OK_TOPICS: [...this.approvedTopics],
-        conversationHistory: localConversationHistory,
-        uniqueTimestamp: localUniqueTimestamp,
-        llm: this.llm
-    }, this.logger);
+      distractionTopic,
+      CONFUSED_SENTANCES: [...this.CONFUSED_SENTANCES],
+      IGNORED_SENTENCES: [...this.IGNORED_SENTENCES],
+      DOMAINS: localAllowedDomains,
+      BANNED_TOPICS: [...this.BANNED_TOPICS],
+      OK_TOPICS: [...this.approvedTopics],
+      conversationHistory: localConversationHistory,
+      uniqueTimestamp: localUniqueTimestamp,
+      llm: this.llm
+    }, this.logger)
 
-    const analyserResult = await analyser.analyseConversation(localUniqueTimestamp, localConversationHistory, cycleNumber, distractionTopic);
+    const analyserResult = await analyser.analyseConversation(localUniqueTimestamp, localConversationHistory, cycleNumber, distractionTopic)
 
-    const inputTokensUsed = analyserResult.tokenUsage.metrics.find(metric => metric.metricName === 'prompt_tokens').metricValue;
-    const outputTokensUsed = analyserResult.tokenUsage.metrics.find(metric => metric.metricName === 'completion_tokens').metricValue;
+    const inputTokensUsed = analyserResult.tokenUsage.metrics.find(metric => metric.metricName === 'prompt_tokens').metricValue
+    const outputTokensUsed = analyserResult.tokenUsage.metrics.find(metric => metric.metricName === 'completion_tokens').metricValue
 
-    analyserResult.promptTokensUsed = (inputTokensUsed || 0) + localPromptTokensUsed;
-    analyserResult.completionTokensUsed = (outputTokensUsed || 0) + localCompletionTokensUsed;
-    analyserResult.totalTokensUsed = analyserResult.promptTokensUsed + analyserResult.completionTokensUsed;
+    analyserResult.promptTokensUsed = (inputTokensUsed || 0) + localPromptTokensUsed
+    analyserResult.completionTokensUsed = (outputTokensUsed || 0) + localCompletionTokensUsed
+    analyserResult.totalTokensUsed = analyserResult.promptTokensUsed + analyserResult.completionTokensUsed
 
-    return analyserResult;
-}
-
+    return analyserResult
+  }
 
   async _stop (container) {
     await stopContainer(container, this.logger)

@@ -33,11 +33,8 @@ class MisuseDetector {
   turnForbiddenTopicsIntoDistractionTopics () {
     // This is done as it make sense to try and persuade the bot to talk about things that we know are forbidden.
     if (this.params.forbiddenTopics.length > 0) {
-      console.log('Forbidden topics found so adding them to distraction topics')
       this.params.distractionTopics = [...this.params.distractionTopics, ...this.params.forbiddenTopics]
-      // Remove duplicates
       this.params.distractionTopics = [...new Set(this.params.distractionTopics.map(topic => topic.toLowerCase()))]
-      console.log('Distraction topics: ', this.params.distractionTopics)
     }
   }
 }
