@@ -1,11 +1,45 @@
 const { HumanMessage, SystemMessage, AIMessage } = require('@langchain/core/messages')
+const { encode } = require('gpt-3-encoder')
 
-class lLMHelper {
+class LLMHelper {
   constructor (llm) {
     if (!llm) {
       throw new Error('LLM is not defined')
     }
     this.llm = llm
+    this.retryDelay = 1000
+    this.maxRetries = 3
+  }
+
+  async retryWithBackoff (messages) {
+    let retries = 0
+
+    while (retries < this.maxRetries) {
+      try {
+        return await this.llm.invoke(messages)
+      } catch (error) {
+        if (this.isRateLimitError(error)) {
+          retries++
+          if (retries === this.maxRetries) {
+            throw error
+          }
+
+          console.warn(`Rate limit hit, waiting ${this.retryDelay}ms before retry ${retries}/${this.maxRetries}`)
+          await new Promise(resolve => setTimeout(resolve, this.retryDelay))
+
+          // Exponential backoff
+          this.retryDelay *= 2
+        } else {
+          throw error
+        }
+      }
+    }
+  }
+
+  isRateLimitError (error) {
+    return error.message?.includes('Rate limit') ||
+           error.response?.status === 429 ||
+           error.code === 'rate_limit_exceeded'
   }
 
   async sendRequest (messages, jsonObjectField = null) {
@@ -26,19 +60,34 @@ class lLMHelper {
       })
     }
 
-    const systemMessage = messages.find(msg => msg instanceof SystemMessage)?.content
-    const humanMessage = messages.find(msg => msg instanceof HumanMessage)?.content
-
     let response = null
     let content = null
     try {
-      response = await this.llm.invoke(messages)
+      response = await this.retryWithBackoff(messages)
 
-      // Handle different response structures. This works for openai and llama, however we might need to handle other providers differently.
-      // The problem is that different provider return the content in different ways.
       content = typeof response === 'string'
         ? response
         : ('content' in response ? response.content : response)
+
+      let totalPromptTokens = 0
+      let totalCompletionTokens = 0
+
+      if (this.llm.provider === 'openai') {
+        const tokenUsage = response.response_metadata?.tokenUsage || response.usage_metadata
+        totalPromptTokens += tokenUsage?.promptTokens || tokenUsage?.input_tokens || 0
+        totalCompletionTokens += tokenUsage?.completionTokens || tokenUsage?.output_tokens || 0
+      } else if (this.llm.provider === 'llama') {
+        try {
+          const promptText = messages.map(m => m.content || '').join(' ')
+          const completionText = content || ''
+          const promptTokens = encode(promptText).length
+          const completionTokens = encode(completionText).length
+          totalPromptTokens += promptTokens
+          totalCompletionTokens += completionTokens
+        } catch (tokenError) {
+          console.warn('Error counting tokens:', tokenError)
+        }
+      }
 
       const jsonResponse = this.extractJsonFromContent(content)
 
@@ -54,20 +103,11 @@ class lLMHelper {
 
       return {
         result: finalResponse,
-        prompt_tokens: response.usage?.prompt_tokens,
-        completion_tokens: response.usage?.completion_tokens
+        prompt_tokens: totalPromptTokens,
+        completion_tokens: totalCompletionTokens
       }
     } catch (error) {
-      console.error('Error in LLM request:', error.message)
-
-      console.log('The prompt was:' + systemMessage + '\n' + humanMessage)
-      console.log('The response was:', response)
-      console.error('Stack trace:', error.stack)
-
-      console.log('The jsonObjectField:' + jsonObjectField)
-
-      console.log('The original response was:', content)
-
+      console.log('error ->', error)
       return null
     }
   }
@@ -104,12 +144,10 @@ class lLMHelper {
 
         return JSON.parse(sanitizedContent)
       } catch (e) {
-        console.log('Error in extractJsonFromContent:', e)
-        console.log('content ->', content)
-        throw new Error('Failed to parse JSON from response')
+        throw new Error('Failed to parse JSON from response.')
       }
     }
   }
 }
 
-module.exports = lLMHelper
+module.exports = LLMHelper

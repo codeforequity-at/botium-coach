@@ -83,12 +83,9 @@ class TestResultBuilder {
 
   createTokenUsage (testResultsUUID, provider, metrics = []) {
     return {
-      Id: uuidv4(),
       provider,
       testResultsId: testResultsUUID,
       metrics: metrics.map(({ metricName, metricValue }) => ({
-        Id: uuidv4(),
-        tokenUsageId: null, // Will be linked to TokenUsage after insertion
         metricName,
         metricValue
       }))
@@ -122,9 +119,9 @@ class TestResultBuilder {
 
     const transcript = this.createTranscript(testResult.Id, customData.transcriptEntries)
 
-    const tokenUsage = (customData.tokenUsage || []).map(usage =>
-      this.createTokenUsage(testResult.Id, usage.provider, usage.metrics)
-    )
+    const tokenUsage = customData.tokenUsage
+      ? this.createTokenUsage(testResult.Id, customData.tokenUsage.provider, customData.tokenUsage.metrics)
+      : null
 
     const violations = this.createViolations(testResult.Id, customData.violationsData)
 

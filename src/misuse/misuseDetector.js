@@ -6,26 +6,36 @@ class MisuseDetector {
     this.params = params
     this.loggingFunction = loggingFunction
 
-    // Initialize default LLM if not provided
     if (!params.llm) {
       throw new Error('LLM is required')
     }
     this.llm = params.llm
   }
 
-  async detectMisuse () {
-    // Pass the LLM to ConversationTracker through params
+  async detectMisuse (maxConcurrent = 20, runInParallel = true) {
     const conversationTracker = new ConversationTracker({
       ...this.params,
       llm: this.llm
     }, this.loggingFunction)
 
-    const misuseResults = await conversationTracker.performDistractionConversations(
+    this.turnForbiddenTopicsIntoDistractionTopics()
+
+    const misuseResults = await conversationTracker.performDistractionConversationsAndCheckForMisuse(
       this.params.distractionTopics,
-      this.params.numberOfCycles
+      this.params.numberOfCycles,
+      maxConcurrent,
+      runInParallel
     )
 
-    return misuseResults
+    return misuseResults.results
+  }
+
+  turnForbiddenTopicsIntoDistractionTopics () {
+    // This is done as it make sense to try and persuade the bot to talk about things that we know are forbidden.
+    if (this.params.forbiddenTopics.length > 0) {
+      this.params.distractionTopics = [...this.params.distractionTopics, ...this.params.forbiddenTopics]
+      this.params.distractionTopics = [...new Set(this.params.distractionTopics.map(topic => topic.toLowerCase()))]
+    }
   }
 }
 
