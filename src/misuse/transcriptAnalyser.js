@@ -205,7 +205,7 @@ class TranscriptAnalyser {
       : historyCopy.slice(0, violationIndex + 1)
   }
 
-  generateDetectionPrompts (violation, domain, forbiddenTopics, priorMessages) {
+  generateDetectionPrompts (violation, domainsAsString, forbiddenTopics, priorMessages) {
     let detectionSystemPrompt
     let detectionUserPrompt
 
@@ -213,10 +213,10 @@ class TranscriptAnalyser {
       detectionSystemPrompt = PromptTemplates.DETECT_BANNED_TOPIC_SYSTEM(violation.statement, forbiddenTopics)
       detectionUserPrompt = PromptTemplates.DETECT_BANNED_TOPIC_USER(violation.statement, forbiddenTopics, priorMessages)
     } else if (violation.type === 'out of domain') {
-      detectionSystemPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_SYSTEM(violation.statement, domain, priorMessages)
-      detectionUserPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_USER(violation.statement, domain, priorMessages)
+      detectionSystemPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_SYSTEM(domainsAsString)
+      detectionUserPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_USER(violation.statement, domainsAsString, priorMessages)
     } else if (violation.type === 'inappropriate') {
-      detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM()
+      detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM(domainsAsString)
       detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
     }
 
@@ -226,7 +226,6 @@ class TranscriptAnalyser {
   async isTrueViolation (violation, history) {
     const domain = this.commonInstance.formatTopicList(this.allowedDomains, true)
     const forbiddenTopics = this.commonInstance.formatTopicList(this.forbiddenTopics, true)
-
     const historyCopy = [...history]
     const priorMessages = this.getPrecedingMessages(violation.index, historyCopy, true)
 
@@ -246,11 +245,8 @@ class TranscriptAnalyser {
     } else if (violation.type === 'inappropriate') {
       detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
     }
-
-    const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'DetectionPrompt.txt')
-
+    const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'ViolationConfirmation.txt')
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
-
     let result = false
     if (violation.type === 'inappropriate') {
       if (confirmedViolation && confirmedViolation.inappropriate === 'YES') {
@@ -265,7 +261,6 @@ class TranscriptAnalyser {
         }
       }
     }
-
     return result
   }
 
@@ -287,7 +282,6 @@ class TranscriptAnalyser {
 
     const priorMessages = this.getPrecedingMessages(violation.index, historyCopy, true)
 
-    // This is getting the context and the reason. But we are ctually getting that during the confirmatiom stop.
     const { detectionSystemPrompt, detectionUserPrompt } = this.generateDetectionPrompts(
       violation,
       domain,
@@ -298,7 +292,7 @@ class TranscriptAnalyser {
     const detectionResponse = await this.sendRequestWithLogging(
       detectionSystemPrompt,
       detectionUserPrompt,
-      'DetectionPrompt.txt'
+      'ViolationConfirmation.txt'
     )
 
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
@@ -323,16 +317,12 @@ class TranscriptAnalyser {
       )
       classificationPromptUser = PromptTemplates.CLASSIFY_BANNED_SEVERITY_USER(
         violation.statement,
-        forbiddenTopics,
         confirmedViolation.reason,
         priorMessages
       )
     } else if (violation.type === 'out of domain') {
       classificationPromptSystem = PromptTemplates.CLASSIFY_DOMAIN_SEVERITY_SYSTEM(
-        violation.statement,
-        domain,
-        confirmedViolation.reason,
-        priorMessages
+        domain
       )
       classificationPromptUser = PromptTemplates.CLASSIFY_DOMAIN_SEVERITY_USER(
         violation.statement,
@@ -344,7 +334,6 @@ class TranscriptAnalyser {
       classificationPromptSystem = PromptTemplates.CLASSIFY_INAPPROPRIATE_SEVERITY_SYSTEM()
       classificationPromptUser = PromptTemplates.CLASSIFY_INAPPROPRIATE_SEVERITY_USER(
         violation.statement,
-        '??',
         priorMessages
       )
     }
@@ -839,61 +828,13 @@ class TranscriptAnalyser {
     return filteredResults
   }
 
-  // think I can delete this
-  async categoriseResults (bannedTopicViolations, outOfDomainViolations, foundBannedTopicViolations) {
-    this.logger('Categorising results...', this.uniqueTimestamp)
-
-    let categorisedViolations = []
-
-    if (foundBannedTopicViolations === true) {
-      this.logger('There was a banned topic violation: \n' + bannedTopicViolations, this.uniqueTimestamp)
-      this.logger('Out of domain violations: \n' + outOfDomainViolations, this.uniqueTimestamp)
-
-      categorisedViolations = [
-        ...(bannedTopicViolations && bannedTopicViolations.trim() ? await this.getBannedResults(bannedTopicViolations, 'banned') : []),
-        ...(outOfDomainViolations && outOfDomainViolations.trim() ? await this.getBannedResults(outOfDomainViolations, 'out of domain') : []),
-        ...(outOfDomainViolations && outOfDomainViolations.trim() ? await this.getBannedResults(outOfDomainViolations, 'inappropriate') : [])
-      ]
-
-      this.logger('Categorisation results:', this.uniqueTimestamp)
-      this.logger(categorisedViolations, this.uniqueTimestamp)
-    } else {
-      this.logger('No banned topic violations detectected: \n' + bannedTopicViolations, this.uniqueTimestamp)
-
-      if (outOfDomainViolations && outOfDomainViolations.trim()) {
-        this.logger('Out of domain violations: \n' + outOfDomainViolations, this.uniqueTimestamp)
-
-        categorisedViolations = await this.getBannedResults(outOfDomainViolations, 'out of domain')
-
-        this.logger('Categorisation results: \n', this.uniqueTimestamp)
-        this.logger(categorisedViolations, this.uniqueTimestamp)
-      } else {
-        this.logger('No out of domain violations detectected: \n' + bannedTopicViolations, this.uniqueTimestamp)
-        this.logger('NOTHING TO CATEGORISE!', this.uniqueTimestamp, 'CategoriseResultsPrompt.txt')
-        return null
-      }
-    }
-
-    if (categorisedViolations.length === 0) {
-      return null
-    }
-
-    this.logger('PROMPT: \n ' + PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT(), this.uniqueTimestamp, 'CategoriseResultsPrompt.txt')
-    this.logger('Sentances: \n' +
-            (bannedTopicViolations && bannedTopicViolations.trim() ? bannedTopicViolations : 'No banned topic results') + '\n' +
-            (outOfDomainViolations && outOfDomainViolations.trim() ? outOfDomainViolations : 'No excluded OK topic results'), this.uniqueTimestamp, 'CategoriseResultsPrompt.txt')
-    this.logger('\n \nLLM RESPONSE: \n' + JSON.stringify(categorisedViolations, null, 2), this.uniqueTimestamp, 'CategoriseResultsPrompt.txt')
-
-    return categorisedViolations
-  }
-
-  async getBannedResults (resultsToCategorise, type) {
-    this.logger('PROMPT: \n ' + PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT(), this.uniqueTimestamp, 'CategoriseResultsPrompt2.txt')
+  async getBannedResults (resultsToCategorise, type, domain) {
+    this.logger('PROMPT: \n ' + PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT(domain), this.uniqueTimestamp, 'CategoriseResultsPrompt2.txt')
     this.logger('Sentences: \n' + resultsToCategorise, this.uniqueTimestamp, 'CategoriseResultsPrompt2.txt')
 
     const categorisedResults = await this.sendLLMRequest(
       [
-        PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT(),
+        PromptTemplates.CATEGORISE_VIOLATIONS_PROMPT(domain),
         'Sentences: \n' + resultsToCategorise
       ]
     )
