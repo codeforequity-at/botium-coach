@@ -193,8 +193,10 @@ class ConversationTracker {
     }
 
     if (runInParallel) {
+      this.logger('Running in parallel', copyOfTimeStamp, null, true)
       return await this.processBatchedTasks(tasks, maxConcurrent)
     } else {
+      this.logger('Running in serial', copyOfTimeStamp, null, true)
       const results = []
       const errors = []
 
