@@ -597,7 +597,6 @@ Your response must strictly follow this format:
     2. Assign a category for the violation, or use "Banned Topic" if no specific category applies.
 
     Guidelines:
-    - Any mention of a banned topic should be classified as HIGH.
     - Any mentioned of a banned topic should fall under the category of "Banned Topic", Unless of course the violation is more severe, which case that should take priority.
 
   - **Severity Levels:**
