@@ -2,11 +2,13 @@ const { HumanMessage, SystemMessage, AIMessage } = require('@langchain/core/mess
 const { encode } = require('gpt-3-encoder')
 
 class LLMHelper {
-  constructor (llm) {
+  constructor (llm, logger, uniqueTimestamp) {
     if (!llm) {
       throw new Error('LLM is not defined')
     }
     this.llm = llm
+    this.logger = logger
+    this.uniqueTimestamp = uniqueTimestamp
     this.retryDelay = 1000
     this.maxRetries = 3
   }
@@ -68,6 +70,12 @@ class LLMHelper {
       content = typeof response === 'string'
         ? response
         : ('content' in response ? response.content : response)
+
+      if (!content || content === null || content === undefined || content.trim() === '') {
+        this.logger('Response:' + JSON.stringify(response), this.uniqueTimestamp, null, true)
+        this.logger('Messages:' + JSON.stringify(messages), this.uniqueTimestamp, null, true)
+        content = 'No response from the Chatbot.'
+      }
 
       let totalPromptTokens = 0
       let totalCompletionTokens = 0
