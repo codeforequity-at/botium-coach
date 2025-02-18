@@ -27,7 +27,7 @@ class ConversationTracker {
       throw new Error('LLM is required for ConversationTracker')
     }
     this.llm = params.llm
-    this.llmHelper = new LLMHelper(this.llm)
+    this.llmHelper = new LLMHelper(this.llm, this.logger, this.uniqueTimestam)
   }
 
   getConversationHistory () {
@@ -44,7 +44,7 @@ class ConversationTracker {
 
   truncateMessages (messages, maxLength = 300) {
     return messages.map(message => {
-      if (message.role === 'user' && message.content.length > maxLength) {
+      if (message?.role === 'user' && message?.content?.length > maxLength) {
         const truncatedContent = message.content.substring(0, maxLength) + '...'
         return { ...message, content: truncatedContent }
       }
@@ -117,7 +117,7 @@ class ConversationTracker {
 
   async calculateTotalCharactersInConversation () {
     const totalCharacterCount = this.conversationHistory.reduce((acc, message) => {
-      return acc + message.content.length
+      return acc + (message?.content?.length || 0)
     }, 0)
 
     return totalCharacterCount
@@ -243,7 +243,9 @@ class ConversationTracker {
 
         this.logger('\x1b[36m' + localAllowedDomains[0].charAt(0).toUpperCase() + localAllowedDomains[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToLLM + '\n', localUniqueTimestamp, null, true)
 
-        conversationHistoryCharacterCount = localConversationHistory.reduce((acc, msg) => acc + msg.content.length, 0)
+        conversationHistoryCharacterCount = localConversationHistory.reduce((acc, msg) =>
+          acc + (msg?.content?.length || 0)
+        , 0)
 
         if (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
           const response = await this.generateResponse(msgToSendToLLM, localPrimerMessage)
@@ -259,7 +261,9 @@ class ConversationTracker {
           localConversationHistory.push({ role: 'user', content: msgToSendToLLM })
           localConversationHistory.push({ role: 'assistant', content: response })
 
-          conversationHistoryCharacterCount = localConversationHistory.reduce((acc, msg) => acc + msg.content.length, 0)
+          conversationHistoryCharacterCount = localConversationHistory.reduce((acc, msg) =>
+            acc + (msg?.content?.length || 0)
+          , 0)
         }
 
         this.logger('\nConversation character count: ' + conversationHistoryCharacterCount + '/' + MAX_CONVERSATION_CHARACTER_COUNT + '\n', localUniqueTimestamp, null, true)

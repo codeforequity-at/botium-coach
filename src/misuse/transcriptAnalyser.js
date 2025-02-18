@@ -34,7 +34,7 @@ class TranscriptAnalyser {
       throw new Error('LLM is required for ConversationTracker')
     }
     this.llm = llm
-    this.llmHelper = new LLMHelper(this.llm)
+    this.llmHelper = new LLMHelper(this.llm, this.logger, this.uniqueTimestamp)
   }
 
   async excludeViolationsThatAreOk (violations) {
