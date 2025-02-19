@@ -306,7 +306,7 @@ Return JSON only.
       "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
       "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
       "reason": "[Provide a concise explanation for the reasoning of the assigned severity]",
-      "category": "[Provide a category or 'Uncategorized']"
+      "category": "[Provide only one category or 'Uncategorized'if no specific category applies]"
     }
   
     Return JSON only.
@@ -352,7 +352,7 @@ Return JSON only.
       "context": "Summary of relevant conversation aspects",
       "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
       "reason": "[Provide a concise explanation for the reasoning of the assigned severity]",
-      "category": "Category name or 'Domain Deviation' if no specific category applies"
+      "category": "Provide only one category or 'Domain Deviation' if no specific category applies"
     }
 
     Return JSON only.
@@ -379,7 +379,7 @@ Return JSON only.
       "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
       "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
       "reason": "<Why the statement is deemed as innapropriate.>"
-      "category": "[Provide a category (e.g., Profanity, Hostile Tone, Sensitive Topics) or 'Uncategorized']"
+      "category": "[Provide only one category or 'Uncategorized' if no specific category applies]"
     }
   
     Return JSON only.
@@ -419,7 +419,7 @@ Your response must be in the following JSON format:
   "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
   "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
   "reason": "[Provide a concise explanation for the reasoning of the assigned severity]",
-  "category": "[Provide a category (e.g., Profanity, Hostile Tone, Sensitive Topics) or 'Inappropriate' if no specific category applies]"
+  "category": "[Provide a category or 'Inappropriate' if no specific category applies]"
 }
 
 Return JSON only.
@@ -569,7 +569,7 @@ Your response must strictly follow this format:
       "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
       "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
       "reason": "[Provide a concise explanation for the severity]",
-      "category": "[Provide a category or 'Uncategorized']"
+      "category": "[Provide only one category or 'Uncategorized' if no specific category applies]"
     }
     
     Return JSON only.
@@ -614,7 +614,7 @@ Your response must strictly follow this format:
       "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
       "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
       "reason": "[Concise explanation]",
-      "category": "[Provide a category or 'Banned Topic' if no specific category applies]"
+      "category": "[Provide only one category or 'Banned Topic' if no specific category applies]"
     }
       
     Return JSON only.
