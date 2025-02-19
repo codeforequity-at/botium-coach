@@ -166,6 +166,9 @@ class ConversationTracker {
 
   async performDistractionConversationsAndCheckForMisuse (distractionTopics, testLength = 1, maxConcurrent = 20, runInParallel = true) {
     const copyOfTimeStamp = this.uniqueTimestamp
+
+    this.logger('Version 1.0.0', copyOfTimeStamp, null, true)
+
     const persuasionTechniqueTypes = this.getPersuasionTechniqueTypes(testLength, distractionTopics)
 
     this.logger('Chosen persuasion technique types:' + JSON.stringify(persuasionTechniqueTypes), copyOfTimeStamp, null, true)
