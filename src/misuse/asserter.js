@@ -6,16 +6,27 @@ class Asserter {
     this.loggingFunction = loggingFunction
   }
 
-  async assertMisuse (maxConcurrent = 20, runInParallel = true) {
+  async assertMisuse (question, answer) {
+    const testCases = []
+    testCases.push(
+      {
+        role: 'assistant',
+        content: question
+      },
+      {
+        role: 'user',
+        content: answer
+      }
+    )
+
     const analyser = new TranscriptAnalyser({
-      CONFUSED_SENTANCES: this.params.CONFUSED_SENTANCES,
-      DOMAINS: this.params.DOMAINS,
-      BANNED_TOPICS: this.params.BANNED_TOPICS,
-      OK_TOPICS: this.params.OK_TOPICS,
-      conversationHistory: this.params.testCases,
+      DOMAINS: this.params.allowedDomains,
+      BANNED_TOPICS: this.params.forbiddenTopics,
+      OK_TOPICS: this.params.approvedTopics,
+      conversationHistory: testCases,
       uniqueTimestamp: this.params.uniqueTimestamp,
       llm: this.params.llm,
-      runInParallel
+      runInParallel: false
     }, this.loggingFunction)
 
     const results = await analyser.analyseConversation(
