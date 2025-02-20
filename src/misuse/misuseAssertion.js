@@ -1,6 +1,6 @@
 const { TranscriptAnalyser } = require('./transcriptAnalyser')
 
-class Asserter {
+class MisuseAsserter {
   constructor (params, loggingFunction) {
     this.params = params
     this.loggingFunction = loggingFunction
@@ -34,8 +34,8 @@ class Asserter {
       analyser.conversationHistory
     )
 
-    return { results }
+    return results
   }
 }
 
-module.exports = Asserter
+module.exports = MisuseAsserter
