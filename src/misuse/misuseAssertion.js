@@ -58,6 +58,13 @@ class MisuseAsserter {
       analyser.conversationHistory
     )
 
+    // Filter violations to only keep those matching the answer (case insensitive)
+    if (results.violations) {
+      results.violations = results.violations.filter(violation =>
+        violation.statement.toLowerCase() === answer.toLowerCase()
+      )
+    }
+
     return results
   }
 }
