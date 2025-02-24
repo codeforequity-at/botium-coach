@@ -6,8 +6,12 @@ class MisuseAsserter {
     this.loggingFunction = loggingFunction
   }
 
-  async assertMisuse (question, answer) {
+  async assertMisuse (question = null, answer = null) {
     const testCases = []
+
+    if ((!question || !answer) && !this.params.transcript) {
+      throw new Error('You need to provide either a transcript or a question and answer.')
+    }
 
     if (this.params.transcript && this.params.transcript.length > 0) {
       this.params.transcript.forEach(message => {
@@ -29,18 +33,8 @@ class MisuseAsserter {
       )
     }
 
-    // Validate that we have at least 2 messages
     if (testCases.length < 2) {
       throw new Error('Transcript must contain at least 2 messages to perform misuse analysis')
-    }
-
-    // Get the last two messages
-    const lastMessage = testCases[testCases.length - 1]
-    const secondLastMessage = testCases[testCases.length - 2]
-
-    // Validate that the messages match
-    if (secondLastMessage.content !== question || lastMessage.content !== answer) {
-      throw new Error('The provided question and answer do not match the last two messages in the transcript')
     }
 
     const analyser = new TranscriptAnalyser({
@@ -58,7 +52,9 @@ class MisuseAsserter {
       analyser.conversationHistory
     )
 
-    // Filter violations to only keep those matching the answer (case insensitive)
+    if (!answer) {
+      answer = this.params.transcript[this.params.transcript.length - 1].content
+    }
     if (results.violations) {
       results.violations = results.violations.filter(violation =>
         violation.statement.toLowerCase() === answer.toLowerCase()
