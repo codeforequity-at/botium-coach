@@ -14,13 +14,26 @@ class MisuseAsserter {
     }
 
     if (this.params.transcript && this.params.transcript.length > 0) {
-      this.params.transcript.forEach(message => {
+      // Only provided a an answer in the transcript.
+      if (this.params.transcript.length === 1 && this.params.transcript[0].role === 'user') {
         testCases.push({
-          role: message.role,
-          content: message.content
+          role: 'assistant',
+          content: ''
         })
-      })
+        testCases.push({
+          role: this.params.transcript[0].role,
+          content: this.params.transcript[0].content
+        })
+      } else {
+        this.params.transcript.forEach(message => {
+          testCases.push({
+            role: message.role,
+            content: message.content
+          })
+        })
+      }
     } else {
+      // No transcript provided, so we are using the question and answer.
       testCases.push(
         {
           role: 'assistant',
