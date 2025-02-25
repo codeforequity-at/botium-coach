@@ -4,6 +4,7 @@ const termAnalytics = require('./src/termAnalytics')
 const language = require('./src/language')
 const MisuseDetector = require('./src/misuse/misuseDetector')
 const MisuseAsserter = require('./src/misuse/misuseAssertion')
+const ObjectiveAnswerEvaulator = require('./src/objectiveAssertion/ObjectiveAnswerEvaulator')
 
 module.exports = {
   nlpAnalytics: {
@@ -19,5 +20,6 @@ module.exports = {
     ...language
   },
   MisuseDetector,
-  MisuseAsserter
+  MisuseAsserter,
+  ObjectiveAnswerEvaulator
 }
