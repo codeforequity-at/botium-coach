@@ -233,7 +233,7 @@ class TranscriptAnalyser {
     if (violation.type === 'banned') {
       detectionSystemPrompt = PromptTemplates.DETECT_BANNED_TOPIC_SYSTEM(violation.statement, forbiddenTopics)
     } else if (violation.type === 'out of domain') {
-      detectionSystemPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_SYSTEM(violation.statement, domain, priorMessages)
+      detectionSystemPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_SYSTEM(domain)
     } else if (violation.type === 'inappropriate') {
       detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM()
     }
@@ -757,7 +757,7 @@ class TranscriptAnalyser {
   async analyzeNonDomainResults (DOMAINS) {
     const nonDomainResultsPrompt = PromptTemplates.DETECT_OUT_OF_DOMAIN_PROMPT(DOMAINS, this.commonInstance.formatTopicList)
 
-    const historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`)
+    const historyAsString = this.conversationHistory.map((msg, index) => `${index}. Role: ${msg.role} -> Content: ${msg.content}`)
 
     const transcriptAsText = 'Transcript:\n' + historyAsString.join('\n')
 
@@ -775,8 +775,8 @@ class TranscriptAnalyser {
         .filter(index => index > 0 && index <= this.conversationHistory.length)
         .map(index => ({
           index,
-          role: this.conversationHistory[index - 1].role, // Include the role (user or assistant)
-          statement: this.conversationHistory[index - 1].content,
+          role: this.conversationHistory[index].role, // Include the role (user or assistant)
+          statement: this.conversationHistory[index].content,
           type: 'out of domain'
         }))
       : []

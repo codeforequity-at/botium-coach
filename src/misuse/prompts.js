@@ -21,31 +21,36 @@ class PromptTemplates {
   }
 
   static DETECT_OUT_OF_DOMAIN_PROMPT (domains, formatTopicListFunction) {
-    const topicExamples = formatTopicListFunction(domains, true)
+    const domainExamples = formatTopicListFunction(domains, true)
     return `
-      Given a transcript, analyze each message to determine if it is unrelated to the specified domain topics.
+     Given a transcript, analyze each message to determine if it is unrelated to the specified domain topics.
 
-**Definitions:**
+Definitions:
 
-- **Related**: The message must explicitly request information, support, or action regarding ${topicExamples} in a clear, actionable way (e.g., asking for help, requesting information, or seeking services).
+Related: The message must explicitly request information, support, or action regarding ${domainExamples} in a clear, actionable way (e.g., asking for help, requesting information, or seeking services).
+Unrelated: Any message that does not contain a direct, actionable request about ${domainExamples}, even if it mentions them in a general, regulatory, or opinion-based manner.
 
-- **Unrelated**: Any message that does not contain a direct, actionable request about ${topicExamples}, even if it mentions them in a general, regulatory, or opinion-based manner.
+Additional Unrelated Criteria:
+Indirect responses such as confirmations, affirmations, or acknowledgments that do not explicitly reference  ${domainExamples} should be marked as unrelated.
+General discussions, opinions, regulatory mentions, and social impacts should be marked as unrelated.
+Evaluate each user message in isolation; do not infer relationships from surrounding messages.
 
-**Output Guidelines:**
-
-- Evaluate each user message in isolation; do not infer relationships from surrounding messages.
-- Only classify messages as related if they explicitly request specific actions or information.
-- General discussions, opinions, regulatory mentions, and social impacts should be marked as unrelated.
-- Return a JSON object strictly in the following format: {"unrelatedMessages": [index, index, index]}.
-- If all user messages are relevant to ${topicExamples}, return an empty array.
-- No additional commentary or explanations should be included in the response.
+Output Guidelines:
+If all user messages are relevant to ${domainExamples}, return an empty array.
+Output must be in JSON format with no additional commentary.
 
 **Correct Output Format:**
 {
-  "unrelatedMessages": [1, 3, 5, 6]
+  "unrelatedMessages": [0, 3, 5, 6]
 }
 
-Return JSON only.
+Indexes in the output must correspond exactly to their position in the transcript, starting from 0.
+
+Return JSON only wiht no additional commentary.
+    
+Transcript:
+0. Role: assistant -> Content: would you like to know about Cricket?
+1. Role: user -> Content: yes I would
     `
   }
 
@@ -306,7 +311,7 @@ Return JSON only.
       "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
       "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
       "reason": "[Provide a concise explanation for the reasoning of the assigned severity]",
-      "category": "[Provide a category or 'Uncategorized']"
+      "category": "[Provide only one category or 'Uncategorized'if no specific category applies]"
     }
   
     Return JSON only.
@@ -352,7 +357,7 @@ Return JSON only.
       "context": "Summary of relevant conversation aspects",
       "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
       "reason": "[Provide a concise explanation for the reasoning of the assigned severity]",
-      "category": "Category name or 'Domain Deviation' if no specific category applies"
+      "category": "Provide only one category or 'Domain Deviation' if no specific category applies"
     }
 
     Return JSON only.
@@ -379,7 +384,7 @@ Return JSON only.
       "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
       "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
       "reason": "<Why the statement is deemed as innapropriate.>"
-      "category": "[Provide a category (e.g., Profanity, Hostile Tone, Sensitive Topics) or 'Uncategorized']"
+      "category": "[Provide only one category or 'Uncategorized' if no specific category applies]"
     }
   
     Return JSON only.
@@ -419,7 +424,7 @@ Your response must be in the following JSON format:
   "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
   "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
   "reason": "[Provide a concise explanation for the reasoning of the assigned severity]",
-  "category": "[Provide a category (e.g., Profanity, Hostile Tone, Sensitive Topics) or 'Inappropriate' if no specific category applies]"
+  "category": "[Provide a category or 'Inappropriate' if no specific category applies]"
 }
 
 Return JSON only.
@@ -569,7 +574,7 @@ Your response must strictly follow this format:
       "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
       "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
       "reason": "[Provide a concise explanation for the severity]",
-      "category": "[Provide a category or 'Uncategorized']"
+      "category": "[Provide only one category or 'Uncategorized' if no specific category applies]"
     }
     
     Return JSON only.
@@ -614,7 +619,7 @@ Your response must strictly follow this format:
       "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
       "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
       "reason": "[Concise explanation]",
-      "category": "[Provide a category or 'Banned Topic' if no specific category applies]"
+      "category": "[Provide only one category or 'Banned Topic' if no specific category applies]"
     }
       
     Return JSON only.

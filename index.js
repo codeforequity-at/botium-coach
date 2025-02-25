@@ -3,6 +3,7 @@ const kFold = require('./src/kFold')
 const termAnalytics = require('./src/termAnalytics')
 const language = require('./src/language')
 const MisuseDetector = require('./src/misuse/misuseDetector')
+const MisuseAsserter = require('./src/misuse/misuseAssertion')
 
 module.exports = {
   nlpAnalytics: {
@@ -17,5 +18,6 @@ module.exports = {
   language: {
     ...language
   },
-  MisuseDetector
+  MisuseDetector,
+  MisuseAsserter
 }
