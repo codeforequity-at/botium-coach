@@ -74,15 +74,16 @@ class TranscriptAnalyser {
   }
 
   async analyseConversation (timeStamp, history, cycleNumber, distractionTopic) {
+    const analysisId = `Analysis_${Math.random().toString(36).substr(2, 9)}`
     this.uniqueTimestamp = timeStamp
     this.conversationHistory = history
-    this.logger('Identifying misuse. Please be patient...', this.uniqueTimestamp, null, true)
+    this.logger(`[${analysisId}] Identifying misuse. Please be patient...`, this.uniqueTimestamp, null, true)
 
-    this.logger('Analysing with the following settings....', this.uniqueTimestamp)
-    this.logger('Banned Topics: ' + JSON.stringify(this.forbiddenTopics), this.uniqueTimestamp)
-    this.logger('Domains: ' + JSON.stringify(this.allowedDomains), this.uniqueTimestamp)
-    this.logger('OK Topics: ' + JSON.stringify(this.approvedTopics), this.uniqueTimestamp)
-    this.logger('Confused Sentences: ' + JSON.stringify(this.confusedSentances), this.uniqueTimestamp)
+    this.logger(`[${analysisId}] Analysing with the following settings....`, this.uniqueTimestamp)
+    this.logger(`[${analysisId}] Banned Topics: ${JSON.stringify(this.forbiddenTopics)}`, this.uniqueTimestamp)
+    this.logger(`[${analysisId}] Domains: ${JSON.stringify(this.allowedDomains)}`, this.uniqueTimestamp)
+    this.logger(`[${analysisId}] OK Topics: ${JSON.stringify(this.approvedTopics)}`, this.uniqueTimestamp)
+    this.logger(`[${analysisId}] Confused Sentences: ${JSON.stringify(this.confusedSentances)}`, this.uniqueTimestamp)
     this.logger('', this.uniqueTimestamp)
 
     try {
@@ -94,14 +95,14 @@ class TranscriptAnalyser {
 
         // Step 2. Get responses that violate the DOMAINS.
         // Now we have all sentences that discuss topics outside of the domain.
-        this.identifyNonDomainViolations()
+        this.identifyNonDomainViolations(analysisId)
       ])
 
-      this.logResults('Step 2. Out of domain violations', outOfDomainViolations, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 2. Out of domain violations`, outOfDomainViolations, 'ResultBreakdown.txt')
 
       // Step 3. We need to check if the out of domain violations should be excused, as they could fall within a topic that was deemed OK.
       const domainViolationsExcludingSome = await this.excludeViolationsThatAreOk(outOfDomainViolations)
-      this.logResults('Step 3. After excluding topics that are deemed as OK(OK within the domain)', domainViolationsExcludingSome, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 3. After excluding topics that are deemed as OK(OK within the domain)`, domainViolationsExcludingSome, 'ResultBreakdown.txt')
 
       // At this point we have banned topic violations and domain violations(excluding those which are actually ok)
       const topLevelViolations = [...bannedtopicViolations, ...domainViolationsExcludingSome]
@@ -111,31 +112,31 @@ class TranscriptAnalyser {
 
       // Step 5. Removing any duplictes that might exist.
       const uniqueViolations = this.getUniqueViolations(topLevelViolations, inaprpriateViolations)
-      this.logResults('Step 5. After removing duplicates', uniqueViolations, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 5. After removing duplicates`, uniqueViolations, 'ResultBreakdown.txt')
 
       // Step 6. Confirm violations
       const confirmedVilations = await this.confirmViolations(uniqueViolations, history)
-      this.logResults('Step 6. After confirming violations', confirmedVilations, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 6. After confirming violations`, confirmedVilations, 'ResultBreakdown.txt')
 
       // Step 7. Categorised and improve reasoning(each one is done individualy).
       let gradedResults = await this.classifyAndImproveReasoning(confirmedVilations, history)
-      this.logResults('Step 7. After grading results', gradedResults, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 7. After grading results`, gradedResults, 'ResultBreakdown.txt')
 
       // Step 8. Filter out instances where the bot is asking the user to repeat what they said.
       gradedResults = await this.removeRepititionRequests(gradedResults)
-      this.logResults('Step 8. After removing violations that are repitition requests', gradedResults, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 8. After removing violations that are repitition requests`, gradedResults, 'ResultBreakdown.txt')
 
       // Step 9. Filter out any greetings or farewells
       gradedResults = await this.removeGreetingsAndGoodByes(gradedResults)
-      this.logResults('Step 9. After removing greetings and farewells.', gradedResults, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 9. After removing greetings and farewells.`, gradedResults, 'ResultBreakdown.txt')
 
       // Step 10. Filter out severities of N/A
       gradedResults = this.removeNonApplicableSeverity(gradedResults)
-      this.logResults('Step 10. After removing results with severity of N/A', gradedResults, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 10. After removing results with severity of N/A`, gradedResults, 'ResultBreakdown.txt')
 
       return this.prepareTestResults(gradedResults, cycleNumber, distractionTopic)
     } catch (error) {
-      console.error('\nError analysing conversation:\n', error)
+      console.error(`\n[${analysisId}] Error analysing conversation:\n`, error)
       return false
     }
   }
@@ -577,36 +578,36 @@ class TranscriptAnalyser {
     return gradedResultsList
   }
 
-  async identifyBannedTopics () {
-    this.logger('Identifying if the LLM discussed banned topics...', this.uniqueTimestamp)
+  async identifyBannedTopics (analysisId) {
+    this.logger(`[${analysisId}] Identifying if the LLM discussed banned topics...`, this.uniqueTimestamp)
     const result = await this.analyzeBannedTopics(
       this.conversationHistory, this.forbiddenTopics, this.commonInstance.formatBulletList
     )
 
-    this.logger('Found banned topics(below)', this.uniqueTimestamp)
+    this.logger(`[${analysisId}] Found banned topics(below)`, this.uniqueTimestamp)
     this.logger(result, this.uniqueTimestamp)
     this.logger('', this.uniqueTimestamp)
 
     return result
   }
 
-  async identifyNonDomainViolations () {
-    this.logger('Identifying if the LLM discussed topics outside of the domain...', this.uniqueTimestamp)
+  async identifyNonDomainViolations (analysisId) {
+    this.logger(`[${analysisId}] Identifying if the LLM discussed topics outside of the domain...`, this.uniqueTimestamp)
 
     const result = await this.analyzeNonDomainResults(this.allowedDomains, this.sendLLMRequest.bind(this))
 
-    this.logger('Found violations outside of domain: ', this.uniqueTimestamp)
+    this.logger(`[${analysisId}] Found violations outside of domain: `, this.uniqueTimestamp)
     this.logger(result, this.uniqueTimestamp)
 
     return result
   }
 
-  async identifyInapropriateViolations () {
-    this.logger('Identifying if the LLM discussed gave any inaprpriate answers...', this.uniqueTimestamp)
+  async identifyInapropriateViolations (analysisId) {
+    this.logger(`[${analysisId}] Identifying if the LLM discussed gave any inaprpriate answers...`, this.uniqueTimestamp)
 
     const result = await this.checkForAnyInapropriateAnswers()
 
-    this.logger('Found inapropriate answers: ', this.uniqueTimestamp)
+    this.logger(`[${analysisId}] Found inapropriate answers: `, this.uniqueTimestamp)
     this.logger(result, this.uniqueTimestamp)
 
     return result
