@@ -1,4 +1,4 @@
-const LLMHelper = require('./llmProviders/LLMHelper.js')
+const LLMManager = require('./llmProviders/LLMManager.js')
 const Common = require('./common.js')
 const PromptTemplates = require('./prompts.js')
 const TestDataBuilder = require('./testResultBuilder.js')
@@ -13,7 +13,10 @@ class TranscriptAnalyser {
     BANNED_TOPICS: bannedTopic = [],
     OK_TOPICS: approvedTopics = [],
     conversationHistory = [],
-    uniqueTimestamp = null, promptTokensUsed = 0,
+    allModels,
+    defaultModel,
+    uniqueTimestamp = null, 
+    promptTokensUsed = 0,
     completionTokensUsed = 0,
     llm = null
   } = {}, logger) {
@@ -30,11 +33,21 @@ class TranscriptAnalyser {
     this.completionTokensUsed = completionTokensUsed
     this.logger = logger
     this.commonInstance = new Common(this.logger)
+    this.allModels = allModels
+    this.defaultModel = defaultModel
+
     if (!llm) {
-      throw new Error('LLM is required for ConversationTracker')
+      throw new Error('LLM is required for TranscriptAnalyser')
     }
-    this.llm = llm
-    this.llmHelper = new LLMHelper(this.llm, this.logger, this.uniqueTimestamp)
+
+    // Check if the llm is already an LLMManager instance
+    if (llm instanceof LLMManager) {
+      this.llmHelper = llm
+      this.llm = llm.llm // Get the default LLM from the helper
+    } else {
+      this.llm = llm
+      this.llmHelper = new LLMManager(this.llm, this.logger, this.uniqueTimestamp, this.allModels, this.defaultModel)
+    }
   }
 
   async excludeViolationsThatAreOk (violations) {
@@ -143,30 +156,29 @@ class TranscriptAnalyser {
 
   getUniqueViolations (array1, array2) {
     const combinedViolations = [...array1, ...array2]
-
-    const indexMap = new Map()
+    const statementMap = new Map()
 
     combinedViolations.forEach((violation) => {
-      const existingViolation = indexMap.get(violation.index)
+        const normalizedStatement = violation.statement.trim().toLowerCase()
+        const existingViolation = statementMap.get(normalizedStatement)
 
-      if (
-        !existingViolation ||
-        violation.type === 'inappropriate' ||
-        (violation.type === 'banned' && existingViolation.type !== 'inappropriate')
-      ) {
-        indexMap.set(violation.index, violation)
-      }
+        if (
+            !existingViolation ||
+            violation.type === 'inappropriate' ||
+            (violation.type === 'banned' && existingViolation.type !== 'inappropriate')
+        ) {
+            statementMap.set(normalizedStatement, violation)
+        }
     })
 
-    // Convert the map values back to an array
-    return Array.from(indexMap.values())
+    return Array.from(statementMap.values())
   }
 
   gpt4ResponseToArray (input) {
     return input.split('\n').map(sentence => sentence.replace(/"/g, ''))
   }
 
-  async sendLLMRequest (systemContent, userContent, messagesAsObject, jsonObjectField = null) {
+  async sendLLMRequest (systemContent, userContent, messagesAsObject, jsonObjectField = null, useCase = null) {
     if (messagesAsObject == null) {
       messagesAsObject = [
         { role: 'system', content: systemContent },
@@ -174,7 +186,7 @@ class TranscriptAnalyser {
       ]
     }
 
-    const response = await this.llmHelper.sendRequest(messagesAsObject, jsonObjectField)
+    const response = await this.llmHelper.sendRequest(messagesAsObject, jsonObjectField, null, useCase)
 
     if (!response) {
       this.logger('No response from LLM', this.uniqueTimestamp, null, true)
@@ -246,7 +258,7 @@ class TranscriptAnalyser {
     } else if (violation.type === 'inappropriate') {
       detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
     }
-    const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'ViolationConfirmation.txt')
+    const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'ViolationConfirmation.txt', null, 'reasoning')
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
     let result = false
     if (violation.type === 'inappropriate') {
@@ -293,7 +305,9 @@ class TranscriptAnalyser {
     const detectionResponse = await this.sendRequestWithLogging(
       detectionSystemPrompt,
       detectionUserPrompt,
-      'ViolationConfirmation.txt'
+      'ViolationConfirmation.txt',
+      null,
+      'reasoning'
     )
 
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
@@ -625,11 +639,10 @@ class TranscriptAnalyser {
     return result
   }
 
-  async sendRequestWithLogging (prompt, userMessage, logFileName, jsonObectField = null) {
+  async sendRequestWithLogging (prompt, userMessage, logFileName, jsonObectField = null, useCase = null) {
     const result = await this.sendLLMRequest(
-      prompt, userMessage, null, jsonObectField
+      prompt, userMessage, null, jsonObectField, useCase
     )
-
     this.logger('PROMPT: \n ' + prompt, this.uniqueTimestamp, logFileName)
     this.logger(userMessage, this.uniqueTimestamp, logFileName)
     this.logger('\n \nLLM RESPONSE: \n' + (typeof result === 'object' ? JSON.stringify(result, null, 2) : result), this.uniqueTimestamp, logFileName)

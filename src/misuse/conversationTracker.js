@@ -1,4 +1,4 @@
-const LLMHelper = require('./llmProviders/LLMHelper.js')
+const LLMManager = require('./llmProviders/LLMManager.js')
 const { startContainer, stopContainer } = require('./driverHelper.js')
 const { TranscriptAnalyser } = require('./transcriptAnalyser.js')
 const Common = require('./common.js')
@@ -26,8 +26,16 @@ class ConversationTracker {
     if (!params.llm) {
       throw new Error('LLM is required for ConversationTracker')
     }
-    this.llm = params.llm
-    this.llmHelper = new LLMHelper(this.llm, this.logger, this.uniqueTimestam)
+
+    // Check if the llm is already an LLMManager instance
+    if (params.llm instanceof LLMManager) {
+      this.llmHelper = params.llm
+      this.llm = params.llm.llm // Get the default LLM from the helper
+    } else {
+      // For backward compatibility
+      this.llm = params.llm
+      this.llmHelper = new LLMManager(this.llm, this.logger, this.uniqueTimestamp)
+    }
   }
 
   getConversationHistory () {
@@ -167,7 +175,7 @@ class ConversationTracker {
   async performDistractionConversationsAndCheckForMisuse (distractionTopics, testLength = 1, maxConcurrent = 20, runInParallel = true) {
     const copyOfTimeStamp = this.uniqueTimestamp
 
-    this.logger('Version 1.0.0', copyOfTimeStamp, null, true)
+    this.logger('Version 1.1.0', copyOfTimeStamp, null, true)
 
     const persuasionTechniqueTypes = this.getPersuasionTechniqueTypes(testLength, distractionTopics)
 
@@ -297,7 +305,7 @@ class ConversationTracker {
       OK_TOPICS: [...this.approvedTopics],
       conversationHistory: localConversationHistory,
       uniqueTimestamp: localUniqueTimestamp,
-      llm: this.llm
+      llm: this.llmHelper // Pass the LLMManager instance instead of just the llm
     }, this.logger)
 
     const analyserResult = await analyser.analyseConversation(localUniqueTimestamp, localConversationHistory, cycleNumber, distractionTopic)

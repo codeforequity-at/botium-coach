@@ -1,11 +1,12 @@
-const LLMHelper = require('../misuse/llmProviders/LLMHelper.js')
+const LLMManager = require('../misuse/llmProviders/LLMManager.js')
 
 class ObjectiveAnswerEvaulator {
   constructor (transcript, answerObjective, llm, logger) {
     this.validateInputs(transcript, answerObjective)
     this.transcript = transcript
     this.answerObjective = answerObjective
-    this.llmHelper = new LLMHelper(llm, logger, Date.now())
+    this.llmManager = llm;
+    this.logger = logger
   }
 
   validateInputs (transcript, objective) {
@@ -97,9 +98,6 @@ class ObjectiveAnswerEvaulator {
         
         Return the result in JSON format.
       `
-
-    console.log('prompt')
-
     return basePrompt.trim()
   }
 
@@ -138,7 +136,7 @@ class ObjectiveAnswerEvaulator {
       .pop()?.content || ''
 
     const prompt = this.generatePrompt(messageToBeEvaluated, transcript)
-    return await this.llmHelper.sendRequest(prompt)
+    return await this.llmManager.sendRequest(prompt)
   }
 }
 
