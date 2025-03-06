@@ -15,7 +15,7 @@ class TranscriptAnalyser {
     conversationHistory = [],
     allModels,
     defaultModel,
-    uniqueTimestamp = null, 
+    uniqueTimestamp = null,
     promptTokensUsed = 0,
     completionTokensUsed = 0,
     llm = null
@@ -159,16 +159,16 @@ class TranscriptAnalyser {
     const statementMap = new Map()
 
     combinedViolations.forEach((violation) => {
-        const normalizedStatement = violation.statement.trim().toLowerCase()
-        const existingViolation = statementMap.get(normalizedStatement)
+      const normalizedStatement = violation.statement.trim().toLowerCase()
+      const existingViolation = statementMap.get(normalizedStatement)
 
-        if (
-            !existingViolation ||
+      if (
+        !existingViolation ||
             violation.type === 'inappropriate' ||
             (violation.type === 'banned' && existingViolation.type !== 'inappropriate')
-        ) {
-            statementMap.set(normalizedStatement, violation)
-        }
+      ) {
+        statementMap.set(normalizedStatement, violation)
+      }
     })
 
     return Array.from(statementMap.values())
@@ -356,7 +356,9 @@ class TranscriptAnalyser {
     const classificationResponse = await this.sendRequestWithLogging(
       classificationPromptSystem,
       classificationPromptUser,
-      'ClassificationPrompt.txt'
+      'ClassificationPrompt.txt',
+      null,
+      'reasoning'
     )
 
     const classificationResult = this.parseClassificationResponse(classificationResponse, violation.statement, confirmedViolation.context)
@@ -365,7 +367,9 @@ class TranscriptAnalyser {
       PromptTemplates.REASONING_PROMPT_SYSTEM(),
       PromptTemplates.REASONING_PROMPT_USER(classificationResult, priorMessages),
       'ReasoningPrompt.txt',
-      'improvedReasoning'
+      'improvedReasoning',
+      null,
+      'reasoning'
     )
 
     classificationResult.reason = reasoningResponse
