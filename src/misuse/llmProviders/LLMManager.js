@@ -372,6 +372,7 @@ class LLMManager {
   }
 
   extractJsonFromContent (content) {
+    let sanitizedContent = null
     try {
       // Attempt to parse the content directly
       return JSON.parse(content)
@@ -384,14 +385,16 @@ class LLMManager {
       }
       try {
         // Manually remove control characters
-        const sanitizedContent = jsonMatch[0].split('').filter(char => {
+        sanitizedContent = jsonMatch[0].split('').filter(char => {
           const code = char.charCodeAt(0)
           return (code > 31 && code < 127) || (code > 159)
         }).join('')
 
         return JSON.parse(sanitizedContent)
       } catch (e) {
-        throw new Error('Failed to parse JSON from response.')
+        this.logger('Failed to parse JSON from response.', this.uniqueTimestamp, null, true)
+        this.logger('Original response:' + content, this.uniqueTimestamp, null, true)
+        this.logger('Sanitized response:' + sanitizedContent, this.uniqueTimestamp, null, true)
       }
     }
   }
