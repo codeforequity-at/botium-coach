@@ -5,7 +5,6 @@ const language = require('./src/language')
 const MisuseDetector = require('./src/misuse/misuseDetector')
 const MisuseAsserter = require('./src/misuse/misuseAssertion')
 const ObjectiveAnswerEvaulator = require('./src/objectiveAssertion/ObjectiveAnswerEvaulator')
-const LLMManager = require('./src/misuse/llmProviders/LLMManager.js')
 
 module.exports = {
   nlpAnalytics: {
@@ -22,6 +21,5 @@ module.exports = {
   },
   MisuseDetector,
   MisuseAsserter,
-  ObjectiveAnswerEvaulator,
-  LLMManager
+  ObjectiveAnswerEvaulator
 }

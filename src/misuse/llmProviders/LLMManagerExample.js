@@ -1,7 +1,6 @@
 // Import required dependencies
 const { ChatOpenAI } = require('@langchain/openai')
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime')
-const { HumanMessage, SystemMessage } = require('@langchain/core/messages')
 const LLMManager = require('./LLMManager.js')
 
 // Example of how to use LLLLMManagerHelper with custom LLM providers
@@ -97,8 +96,8 @@ async function exampleUsage () {
 
   // Example messages
   const messages = [
-    new SystemMessage('You are a helpful assistant.'),
-    new HumanMessage('Summarize the benefits of using multiple LLM providers.')
+    { role: 'system', content: 'You are a helpful assistant.' },
+    { role: 'user', content: 'Summarize the benefits of using multiple LLM providers.' }
   ]
 
   // Use different LLMs based on provider key
