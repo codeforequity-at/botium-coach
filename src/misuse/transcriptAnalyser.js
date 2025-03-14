@@ -61,7 +61,7 @@ class TranscriptAnalyser {
       testResult: { cycleNumber, status: 'in_progress' },
       transcriptEntries: this.conversationHistory,
       tokenUsage: {
-        provider: this.llm.provider,
+        provider: this.llmManager.provider,
         metrics: [
           { metricName: 'prompt_tokens', metricValue: this.promptTokensUsed },
           { metricName: 'completion_tokens', metricValue: this.completionTokensUsed },
@@ -166,7 +166,7 @@ class TranscriptAnalyser {
     return input.split('\n').map(sentence => sentence.replace(/"/g, ''))
   }
 
-  async sendLLMRequest (systemContent, userContent, messagesAsObject, jsonObjectField = null, useCase = null) {
+  async sendLLMRequest (systemContent, userContent, messagesAsObject, jsonObjectField = null, useCase) {
     if (messagesAsObject == null) {
       messagesAsObject = [
         { role: 'system', content: systemContent },
@@ -619,7 +619,7 @@ class TranscriptAnalyser {
     )
   }
 
-  async sendRequestWithLogging (prompt, userMessage, logFileName, jsonObectField = null, useCase = null) {
+  async sendRequestWithLogging (prompt, userMessage, logFileName, jsonObectField = null, useCase) {
     const result = await this.sendLLMRequest(
       prompt, userMessage, null, jsonObectField, useCase
     )
@@ -656,6 +656,7 @@ class TranscriptAnalyser {
         const violationIndicies = await this.sendLLMRequest(
           bannedTopicsPrompt,
           historyMsg,
+          null,
           null,
           'violations'
         )
