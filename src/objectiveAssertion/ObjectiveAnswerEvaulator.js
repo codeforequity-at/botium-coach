@@ -1,11 +1,9 @@
-const LLMManager = require('../misuse/llmProviders/LLMManager.js')
-
 class ObjectiveAnswerEvaulator {
   constructor (transcript, answerObjective, llm, logger) {
     this.validateInputs(transcript, answerObjective)
     this.transcript = transcript
     this.answerObjective = answerObjective
-    this.llmManager = llm;
+    this.llmManager = llm
     this.logger = logger
   }
 

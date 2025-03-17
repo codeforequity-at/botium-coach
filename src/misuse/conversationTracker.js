@@ -1,4 +1,3 @@
-const LLMManager = require('./llmProviders/LLMManager.js')
 const { startContainer, stopContainer } = require('./driverHelper.js')
 const { TranscriptAnalyser } = require('./transcriptAnalyser.js')
 const Common = require('./common.js')
@@ -9,6 +8,7 @@ const PromptTemplates = require('./prompts.js')
 class ConversationTracker {
   constructor (params, logger) {
     if (!params.driver) throw new Error('Driver is required for ConversationTracker')
+    if (!params.llm) throw new Error('LLM is required for ConversationTracker')
     this.driver = params.driver
     this.allowedDomains = params.allowedDomains || []
     this.primerMessage = params.primerMessage || { role: 'system', content: '' }
@@ -22,20 +22,7 @@ class ConversationTracker {
     this.approvedTopics = params.approvedTopics || []
     this.logger = logger
     this.commonInstance = new Common(this.logger)
-
-    if (!params.llm) {
-      throw new Error('LLM is required for ConversationTracker')
-    }
-
-    // Check if the llm is already an LLMManager instance
-    if (params.llm instanceof LLMManager) {
-      this.llmHelper = params.llm
-      this.llm = params.llm.llm // Get the default LLM from the helper
-    } else {
-      // For backward compatibility
-      this.llm = params.llm
-      this.llmHelper = new LLMManager(this.llm, this.logger, this.uniqueTimestamp)
-    }
+    this.llmManager = params.llm
   }
 
   getConversationHistory () {
@@ -76,8 +63,7 @@ class ConversationTracker {
   prepareMessages () {
     const messages = [this.primerMessage]
     this.collectRecentMessages(messages)
-    const results = this.truncateMessages(messages)
-    return results
+    return this.truncateMessages(messages)
   }
 
   logAndCleanPrompt (prompt) {
@@ -106,9 +92,9 @@ class ConversationTracker {
   }
 
   async generateLLMResponse (messages) {
-    const { result, prompt_tokens: promptUsed, completion_tokens: completionUsed } = await this.llmHelper.sendRequest(messages)
-    this.promptTokensUsed += promptUsed || 0
-    this.completionTokensUsed += completionUsed || 0
+    const { result, usage } = await this.llmManager.sendRequest(messages)
+    this.promptTokensUsed += usage?.promptTokens || 0
+    this.completionTokensUsed += usage?.completionTokens || 0
 
     this.conversationHistory.push({ role: 'assistant', content: result })
     return result
@@ -116,19 +102,16 @@ class ConversationTracker {
 
   updateDistractionSystemPrompt (domains, distractionTopic, persuasionType) {
     const prompt = PromptTemplates.DISTRACTION_PROMPT(distractionTopic, persuasionType, true)
-    const message = {
+    return {
       role: 'system',
       content: prompt
     }
-    return message
   }
 
   async calculateTotalCharactersInConversation () {
-    const totalCharacterCount = this.conversationHistory.reduce((acc, message) => {
+    return this.conversationHistory.reduce((acc, message) => {
       return acc + (message?.content?.length || 0)
     }, 0)
-
-    return totalCharacterCount
   }
 
   getPersuasionTechniqueTypes (testLength, distractionTopics) {
@@ -305,7 +288,7 @@ class ConversationTracker {
       OK_TOPICS: [...this.approvedTopics],
       conversationHistory: localConversationHistory,
       uniqueTimestamp: localUniqueTimestamp,
-      llm: this.llmHelper // Pass the LLMManager instance instead of just the llm
+      llm: this.llmManager
     }, this.logger)
 
     const analyserResult = await analyser.analyseConversation(localUniqueTimestamp, localConversationHistory, cycleNumber, distractionTopic)

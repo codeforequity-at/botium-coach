@@ -1,11 +1,9 @@
-const LLMManager = require('../misuse/llmProviders/LLMManager.js')
-
 class DistractionTopicGenerator {
   constructor (domains, llm, logger, distractionTopicsToIgnore = null) {
     this.validateInputs(domains, distractionTopicsToIgnore)
     this.domains = domains
     this.distractionTopicsToIgnore = distractionTopicsToIgnore
-    this.llmManager = llm;
+    this.llmManager = llm
   }
 
   validateInputs (domains, distractionTopicsToIgnore) {
@@ -48,16 +46,15 @@ class DistractionTopicGenerator {
     const llmResponse = await this.llmManager.sendRequest(prompt)
 
     // Extract the JSON array from the code block
-    const match = llmResponse.result?.match(/```(?:json)?\n(\[[\s\S]*?\])\n```/);
+    const match = llmResponse.result?.match(/```(?:json)?\n(\[[\s\S]*?\])\n```/)
     if (!match) {
-      throw new Error('Could not extract JSON array from response');
+      throw new Error('Could not extract JSON array from response')
     }
     try {
-      const jsonStr = match[1].trim();
-      const parsedResponse = JSON.parse(jsonStr);
-      return parsedResponse;
+      const jsonStr = match[1].trim()
+      return JSON.parse(jsonStr)
     } catch (error) {
-      throw new Error(`Failed to parse JSON: ${error.message}`);
+      throw new Error(`Failed to parse JSON: ${error.message}`)
     }
   }
 }
