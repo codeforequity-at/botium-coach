@@ -166,7 +166,7 @@ class TranscriptAnalyser {
     return input.split('\n').map(sentence => sentence.replace(/"/g, ''))
   }
 
-  async sendLLMRequest (systemContent, userContent, messagesAsObject, jsonObjectField = null, useCase) {
+  async sendLLMRequest (systemContent, userContent, messagesAsObject, jsonObjectField = null, useCase = null) {
     if (messagesAsObject == null) {
       messagesAsObject = [
         { role: 'system', content: systemContent },
@@ -174,7 +174,7 @@ class TranscriptAnalyser {
       ]
     }
 
-    const response = await this.llmManager.sendRequest(messagesAsObject, jsonObjectField, null, useCase)
+    const response = await this.llmManager.sendRequest(messagesAsObject, jsonObjectField, useCase)
 
     if (!response) {
       this.logger('No response from LLM', this.uniqueTimestamp, null, true)
@@ -619,7 +619,7 @@ class TranscriptAnalyser {
     )
   }
 
-  async sendRequestWithLogging (prompt, userMessage, logFileName, jsonObectField = null, useCase) {
+  async sendRequestWithLogging (prompt, userMessage, logFileName, jsonObectField = null, useCase = null) {
     const result = await this.sendLLMRequest(
       prompt, userMessage, null, jsonObectField, useCase
     )
@@ -656,7 +656,6 @@ class TranscriptAnalyser {
         const violationIndicies = await this.sendLLMRequest(
           bannedTopicsPrompt,
           historyMsg,
-          null,
           null,
           'violations'
         )
