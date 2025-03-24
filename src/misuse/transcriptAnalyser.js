@@ -1,4 +1,3 @@
-const LLMHelper = require('./llmProviders/LLMHelper.js')
 const Common = require('./common.js')
 const PromptTemplates = require('./prompts.js')
 const TestDataBuilder = require('./testResultBuilder.js')
@@ -13,10 +12,14 @@ class TranscriptAnalyser {
     BANNED_TOPICS: bannedTopic = [],
     OK_TOPICS: approvedTopics = [],
     conversationHistory = [],
-    uniqueTimestamp = null, promptTokensUsed = 0,
+    allModels,
+    defaultModel,
+    uniqueTimestamp = null,
+    promptTokensUsed = 0,
     completionTokensUsed = 0,
     llm = null
   } = {}, logger) {
+    if (!llm) throw new Error('LLM is required for TranscriptAnalyser')
     this.promptResults = {}
     this.distrctionTopic = distractionTopic
     this.confusedSentances = confusedSentances
@@ -30,11 +33,9 @@ class TranscriptAnalyser {
     this.completionTokensUsed = completionTokensUsed
     this.logger = logger
     this.commonInstance = new Common(this.logger)
-    if (!llm) {
-      throw new Error('LLM is required for ConversationTracker')
-    }
-    this.llm = llm
-    this.llmHelper = new LLMHelper(this.llm, this.logger, this.uniqueTimestamp)
+    this.allModels = allModels
+    this.defaultModel = defaultModel
+    this.llmManager = llm
   }
 
   async excludeViolationsThatAreOk (violations) {
@@ -60,7 +61,7 @@ class TranscriptAnalyser {
       testResult: { cycleNumber, status: 'in_progress' },
       transcriptEntries: this.conversationHistory,
       tokenUsage: {
-        provider: this.llm.provider,
+        provider: this.llmManager.provider,
         metrics: [
           { metricName: 'prompt_tokens', metricValue: this.promptTokensUsed },
           { metricName: 'completion_tokens', metricValue: this.completionTokensUsed },
@@ -143,30 +144,29 @@ class TranscriptAnalyser {
 
   getUniqueViolations (array1, array2) {
     const combinedViolations = [...array1, ...array2]
-
-    const indexMap = new Map()
+    const statementMap = new Map()
 
     combinedViolations.forEach((violation) => {
-      const existingViolation = indexMap.get(violation.index)
+      const normalizedStatement = violation.statement.trim().toLowerCase()
+      const existingViolation = statementMap.get(normalizedStatement)
 
       if (
         !existingViolation ||
-        violation.type === 'inappropriate' ||
-        (violation.type === 'banned' && existingViolation.type !== 'inappropriate')
+            violation.type === 'inappropriate' ||
+            (violation.type === 'banned' && existingViolation.type !== 'inappropriate')
       ) {
-        indexMap.set(violation.index, violation)
+        statementMap.set(normalizedStatement, violation)
       }
     })
 
-    // Convert the map values back to an array
-    return Array.from(indexMap.values())
+    return Array.from(statementMap.values())
   }
 
   gpt4ResponseToArray (input) {
     return input.split('\n').map(sentence => sentence.replace(/"/g, ''))
   }
 
-  async sendLLMRequest (systemContent, userContent, messagesAsObject, jsonObjectField = null) {
+  async sendLLMRequest (systemContent, userContent, messagesAsObject, jsonObjectField = null, useCase = null) {
     if (messagesAsObject == null) {
       messagesAsObject = [
         { role: 'system', content: systemContent },
@@ -174,26 +174,25 @@ class TranscriptAnalyser {
       ]
     }
 
-    const response = await this.llmHelper.sendRequest(messagesAsObject, jsonObjectField)
+    const response = await this.llmManager.sendRequest(messagesAsObject, jsonObjectField, useCase)
 
     if (!response) {
       this.logger('No response from LLM', this.uniqueTimestamp, null, true)
       return null
     }
 
-    const { result, prompt_tokens: promptUsed, completion_tokens: completionUsed } = response
+    const { result, usage } = response
 
-    this.promptTokensUsed += promptUsed || 0
-    this.completionTokensUsed += completionUsed || 0
+    this.promptTokensUsed += usage?.promptTokens || 0
+    this.completionTokensUsed += usage?.completionTokens || 0
 
     return result
   }
 
   locateViolationIndex (conversationHistory, violation) {
-    const violationIndex = conversationHistory.findIndex(
+    return conversationHistory.findIndex(
       item => item && item.content && violation && violation.statement && item.content.replace(/\s+|\n|\r/g, ' ').trim() === violation.statement.replace(/\s+|\n|\r/g, ' ').trim()
     )
-    return violationIndex
   }
 
   // Retrieve up to 3 messages preceding the violation, including the violation itself
@@ -246,7 +245,7 @@ class TranscriptAnalyser {
     } else if (violation.type === 'inappropriate') {
       detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
     }
-    const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'ViolationConfirmation.txt')
+    const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'ViolationConfirmation.txt', null, 'reasoning')
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
     let result = false
     if (violation.type === 'inappropriate') {
@@ -269,10 +268,7 @@ class TranscriptAnalyser {
     const userPrompt = PromptTemplates.EXCUSE_REFUSING_USER(statement, priorMessages)
     const systemPrompt = PromptTemplates.EXCUSE_REFUSING_SYSTEM(statement, priorMessages)
     const response = await this.sendRequestWithLogging(userPrompt, systemPrompt, 'ExcusePrompt.txt', 'excuseRefusal')
-    if (response.toUpperCase() === 'YES') {
-      return true
-    }
-    return false
+    return response.toUpperCase() === 'YES'
   }
 
   async classifyAndImproveReason (violation, history) {
@@ -293,7 +289,9 @@ class TranscriptAnalyser {
     const detectionResponse = await this.sendRequestWithLogging(
       detectionSystemPrompt,
       detectionUserPrompt,
-      'ViolationConfirmation.txt'
+      'ViolationConfirmation.txt',
+      null,
+      'reasoning'
     )
 
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
@@ -342,19 +340,21 @@ class TranscriptAnalyser {
     const classificationResponse = await this.sendRequestWithLogging(
       classificationPromptSystem,
       classificationPromptUser,
-      'ClassificationPrompt.txt'
+      'ClassificationPrompt.txt',
+      null,
+      'reasoning'
     )
 
     const classificationResult = this.parseClassificationResponse(classificationResponse, violation.statement, confirmedViolation.context)
 
-    const reasoningResponse = await this.sendRequestWithLogging(
+    classificationResult.reason = await this.sendRequestWithLogging(
       PromptTemplates.REASONING_PROMPT_SYSTEM(),
       PromptTemplates.REASONING_PROMPT_USER(classificationResult, priorMessages),
       'ReasoningPrompt.txt',
-      'improvedReasoning'
+      'improvedReasoning',
+      null,
+      'reasoning'
     )
-
-    classificationResult.reason = reasoningResponse
 
     return classificationResult
   }
@@ -392,9 +392,7 @@ class TranscriptAnalyser {
       const jsonString = response.slice(jsonStartIndex, jsonEndIndex + 1)
 
       // Parse the extracted JSON string into an object
-      const parsedObject = JSON.parse(jsonString)
-
-      return parsedObject
+      return JSON.parse(jsonString)
     } catch (error) {
       console.error('Failed to parse reasoning response:', error.message)
       return null // Or handle error appropriately
@@ -614,22 +612,17 @@ class TranscriptAnalyser {
   }
 
   async excludeOKTopics (results) {
-    let result = null
-
     this.logger('Excluding topics that were marked as OK...', this.uniqueTimestamp)
     this.logger('Before excluding ok topics \n' + results, this.uniqueTimestamp)
-    result = await this.excludeOKTopicViolations(
+    return await this.excludeOKTopicViolations(
       this.approvedTopics, this.commonInstance.formatTopicList, results, this.conversationHistory
     )
-
-    return result
   }
 
-  async sendRequestWithLogging (prompt, userMessage, logFileName, jsonObectField = null) {
+  async sendRequestWithLogging (prompt, userMessage, logFileName, jsonObectField = null, useCase = null) {
     const result = await this.sendLLMRequest(
-      prompt, userMessage, null, jsonObectField
+      prompt, userMessage, null, jsonObectField, useCase
     )
-
     this.logger('PROMPT: \n ' + prompt, this.uniqueTimestamp, logFileName)
     this.logger(userMessage, this.uniqueTimestamp, logFileName)
     this.logger('\n \nLLM RESPONSE: \n' + (typeof result === 'object' ? JSON.stringify(result, null, 2) : result), this.uniqueTimestamp, logFileName)
@@ -877,13 +870,11 @@ class TranscriptAnalyser {
     const entries = input.trim().split('\n\n')
 
     // Create an array to hold the parsed objects
-    const parsedData = entries.map(entry => {
+    return entries.map(entry => {
       // Since each entry is a single line, we can directly process it
       const statement = entry.replace(/"/g, '') // Remove quotes for safety
       return { statement }
     })
-
-    return parsedData
   }
 
   logResults (message, data, fileName) {

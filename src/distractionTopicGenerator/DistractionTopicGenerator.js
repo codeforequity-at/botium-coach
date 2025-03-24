@@ -1,16 +1,12 @@
-const LLMHelper = require('../misuse/llmProviders/LLMHelper.js')
-
 class DistractionTopicGenerator {
   constructor (domains, llm, logger, distractionTopicsToIgnore = null) {
     this.validateInputs(domains, distractionTopicsToIgnore)
     this.domains = domains
     this.distractionTopicsToIgnore = distractionTopicsToIgnore
-    this.llmHelper = new LLMHelper(llm, logger, Date.now())
+    this.llmManager = llm
   }
 
   validateInputs (domains, distractionTopicsToIgnore) {
-    console.log(domains, distractionTopicsToIgnore)
-
     if (!Array.isArray(domains)) {
       throw new Error('domains must be an array')
     }
@@ -47,15 +43,19 @@ class DistractionTopicGenerator {
 
   async generateDistractionTopics () {
     const prompt = this.generatePrompt()
-    console.log('prompt -> ', prompt)
-    const llmResponse = await this.llmHelper.sendRequest(prompt)
-    console.log('llmResponse -> ', llmResponse)
+    const llmResponse = await this.llmManager.sendRequest(prompt)
 
-    // Extract the JSON array from the markdown code block if present
-    const jsonString = llmResponse.result?.match(/```json\n([\s\S]*?)\n```/)?.[1] || llmResponse
-    const parsedResponse = JSON.parse(jsonString)
-
-    return parsedResponse
+    // Extract the JSON array from the code block
+    const match = llmResponse.result?.match(/```(?:json)?\n(\[[\s\S]*?\])\n```/)
+    if (!match) {
+      throw new Error('Could not extract JSON array from response')
+    }
+    try {
+      const jsonStr = match[1].trim()
+      return JSON.parse(jsonStr)
+    } catch (error) {
+      throw new Error(`Failed to parse JSON: ${error.message}`)
+    }
   }
 }
 

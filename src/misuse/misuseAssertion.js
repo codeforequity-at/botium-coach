@@ -4,10 +4,6 @@ class MisuseAsserter {
   constructor (params, loggingFunction) {
     this.params = params
     this.loggingFunction = loggingFunction
-    this.loggingFunction('\n' + JSON.stringify({
-      message: 'Params',
-      parameters: params
-    }, null, 2) + '\n', null, null, true)
   }
 
   async assertMisuse (question = null, answer = null) {
