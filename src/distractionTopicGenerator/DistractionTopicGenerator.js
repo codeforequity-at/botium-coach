@@ -1,5 +1,5 @@
 class DistractionTopicGenerator {
-  constructor (domains, llm, logger, distractionTopicsToIgnore = null) {
+  constructor (domains, llm, distractionTopicsToIgnore = null) {
     this.validateInputs(domains, distractionTopicsToIgnore)
     this.domains = domains
     this.distractionTopicsToIgnore = distractionTopicsToIgnore
