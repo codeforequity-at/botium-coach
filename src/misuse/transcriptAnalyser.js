@@ -97,14 +97,16 @@ class TranscriptAnalyser {
       const [bannedtopicViolations, outOfDomainViolations] = await Promise.all([
         // Step 1. Get responses that violate TOPICS.
         // Now we have all sentences that discuss banned topics.
-        this.identifyBannedTopics(),
+        this.identifyBannedTopics(analysisId),
 
         // Step 2. Get responses that violate the DOMAINS.
         // Now we have all sentences that discuss topics outside of the domain.
         this.identifyNonDomainViolations(analysisId)
       ])
 
-      this.logResults(`[${analysisId}] Step 2. Out of domain violations`, outOfDomainViolations, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 1. Out Of Domain Violations`, outOfDomainViolations, 'ResultBreakdown.txt')
+
+      this.logResults(`[${analysisId}] Step 2.Banned Topic Violations`, bannedtopicViolations, 'ResultBreakdown.txt')
 
       // Step 3. We need to check if the out of domain violations should be excused, as they could fall within a topic that was deemed OK.
       const domainViolationsExcludingSome = await this.excludeViolationsThatAreOk(outOfDomainViolations)
@@ -661,8 +663,9 @@ class TranscriptAnalyser {
 
   async analyzeBannedTopics (conversationHistory, BANNED_TOPICS, formatBulletList) {
     try {
-      if (BANNED_TOPICS.length > 0) {
-        const bannedTopicsPrompt = PromptTemplates.BANNED_TOPICS_PROMPT(BANNED_TOPICS, formatBulletList)
+      const validBannedTopics = BANNED_TOPICS.filter(topic => topic)
+      if (validBannedTopics.length > 0) {
+        const bannedTopicsPrompt = PromptTemplates.BANNED_TOPICS_PROMPT(validBannedTopics, formatBulletList)
         const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n')
 
         const violationIndicies = await this.sendLLMRequest(
@@ -778,7 +781,7 @@ class TranscriptAnalyser {
 
     const results = violationIndices
       ? violationIndices
-        .filter(index => index > 0 && index <= this.conversationHistory.length)
+        .filter(index => index >= 0 && index < this.conversationHistory.length)
         .map(index => ({
           index,
           role: this.conversationHistory[index].role, // Include the role (user or assistant)
