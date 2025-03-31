@@ -232,7 +232,7 @@ class LanguageAsserter {
           type: 'language',
           severity: 'High',
           category: 'Language Violation',
-          reason: `The previous assistant message was in ${previousLanguage} but the final user message was in ${finalUserLanguage}`
+          reason: `The previous assistant message was in ${previousLanguage} but the user message was in ${finalUserLanguage}`
         })
       }
     } else {
@@ -256,7 +256,7 @@ class LanguageAsserter {
             type: 'language',
             severity: 'High',
             category: 'Language Violation',
-            reason: `The final user message was in ${finalUserLanguage} but should have been in ${this.config.specificLanguage}`
+            reason: `The user message was in ${finalUserLanguage} but should have been in ${this.config.specificLanguage}`
           })
         }
       }
@@ -284,7 +284,7 @@ class LanguageAsserter {
         if (violations.length === 0) {
           return {
             result: 'pass',
-            reason: `The final user message is in the specified language (${this.config.specificLanguage}). Note: Used specificLanguage as fallback since no preceding assistant message was found.`,
+            reason: `The user message is in the specified language (${this.config.specificLanguage}). Note: Used specificLanguage as fallback since no preceding assistant message was found.`,
             tokenUsage
           }
         } else {
@@ -299,7 +299,7 @@ class LanguageAsserter {
 
       return {
         result: 'skip',
-        reason: 'Unable to compare languages: No assistant message found before the final user message, and matchUserLanguage is enabled without a specificLanguage fallback.',
+        reason: 'Unable to compare languages: No assistant message found before the user message, and matchUserLanguage is enabled without a specificLanguage fallback.',
         tokenUsage
       }
     }
@@ -308,8 +308,8 @@ class LanguageAsserter {
       return {
         result: 'pass',
         reason: this.config.matchUserLanguage
-          ? 'The final user message language matches the previous assistant message language.'
-          : `The final user message is in the specified language (${this.config.specificLanguage}).`,
+          ? 'The user message language matches the previous assistant message language.'
+          : `The user message is in the specified language (${this.config.specificLanguage}).`,
         tokenUsage
       }
     } else {
