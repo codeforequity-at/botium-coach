@@ -17,7 +17,8 @@ class TranscriptAnalyser {
     uniqueTimestamp = null,
     promptTokensUsed = 0,
     completionTokensUsed = 0,
-    llm = null
+    llm = null,
+    languageDetection = null
   } = {}, logger) {
     if (!llm) throw new Error('LLM is required for TranscriptAnalyser')
     this.promptResults = {}
@@ -36,6 +37,7 @@ class TranscriptAnalyser {
     this.allModels = allModels
     this.defaultModel = defaultModel
     this.llmManager = llm
+    this.languageDetection = languageDetection
   }
 
   async excludeViolationsThatAreOk (violations) {
@@ -85,6 +87,9 @@ class TranscriptAnalyser {
     this.logger(`[${analysisId}] Domains: ${JSON.stringify(this.allowedDomains)}`, this.uniqueTimestamp)
     this.logger(`[${analysisId}] OK Topics: ${JSON.stringify(this.approvedTopics)}`, this.uniqueTimestamp)
     this.logger(`[${analysisId}] Confused Sentences: ${JSON.stringify(this.confusedSentances)}`, this.uniqueTimestamp)
+    if (this.languageDetection?.enabled) {
+      this.logger(`[${analysisId}] Language Detection: ${JSON.stringify(this.languageDetection)}`, this.uniqueTimestamp)
+    }
     this.logger('', this.uniqueTimestamp)
 
     try {
@@ -92,14 +97,16 @@ class TranscriptAnalyser {
       const [bannedtopicViolations, outOfDomainViolations] = await Promise.all([
         // Step 1. Get responses that violate TOPICS.
         // Now we have all sentences that discuss banned topics.
-        this.identifyBannedTopics(),
+        this.identifyBannedTopics(analysisId),
 
         // Step 2. Get responses that violate the DOMAINS.
         // Now we have all sentences that discuss topics outside of the domain.
         this.identifyNonDomainViolations(analysisId)
       ])
 
-      this.logResults(`[${analysisId}] Step 2. Out of domain violations`, outOfDomainViolations, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 1. Out Of Domain Violations`, outOfDomainViolations, 'ResultBreakdown.txt')
+
+      this.logResults(`[${analysisId}] Step 2.Banned Topic Violations`, bannedtopicViolations, 'ResultBreakdown.txt')
 
       // Step 3. We need to check if the out of domain violations should be excused, as they could fall within a topic that was deemed OK.
       const domainViolationsExcludingSome = await this.excludeViolationsThatAreOk(outOfDomainViolations)
@@ -135,7 +142,14 @@ class TranscriptAnalyser {
       gradedResults = this.removeNonApplicableSeverity(gradedResults)
       this.logResults(`[${analysisId}] Step 10. After removing results with severity of N/A`, gradedResults, 'ResultBreakdown.txt')
 
-      return this.prepareTestResults(gradedResults, cycleNumber, distractionTopic)
+      // Step 11. Check for language violations if language detection is enabled
+      let finalResults = gradedResults
+      if (this.languageDetection?.enabled) {
+        finalResults = await this.checkLanguageViolations(gradedResults)
+        this.logResults(`[${analysisId}] Step 11. After checking language violations`, finalResults, 'ResultBreakdown.txt')
+      }
+
+      return this.prepareTestResults(finalResults, cycleNumber, distractionTopic)
     } catch (error) {
       console.error(`\n[${analysisId}] Error analysing conversation:\n`, error)
       return false
@@ -649,8 +663,9 @@ class TranscriptAnalyser {
 
   async analyzeBannedTopics (conversationHistory, BANNED_TOPICS, formatBulletList) {
     try {
-      if (BANNED_TOPICS.length > 0) {
-        const bannedTopicsPrompt = PromptTemplates.BANNED_TOPICS_PROMPT(BANNED_TOPICS, formatBulletList)
+      const validBannedTopics = BANNED_TOPICS.filter(topic => topic)
+      if (validBannedTopics.length > 0) {
+        const bannedTopicsPrompt = PromptTemplates.BANNED_TOPICS_PROMPT(validBannedTopics, formatBulletList)
         const historyMsg = 'Full Conversation History:\n' + conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`).join('\n')
 
         const violationIndicies = await this.sendLLMRequest(
@@ -766,7 +781,7 @@ class TranscriptAnalyser {
 
     const results = violationIndices
       ? violationIndices
-        .filter(index => index > 0 && index <= this.conversationHistory.length)
+        .filter(index => index >= 0 && index < this.conversationHistory.length)
         .map(index => ({
           index,
           role: this.conversationHistory[index].role, // Include the role (user or assistant)
@@ -879,6 +894,149 @@ class TranscriptAnalyser {
 
   logResults (message, data, fileName) {
     this.logger(`\n---> ${message} <--- \n${JSON.stringify(data, null, 2)}`, this.uniqueTimestamp, fileName)
+  }
+
+  async checkLanguageViolations (results) {
+    if (!this.languageDetection?.enabled) {
+      return results
+    }
+
+    this.logger('\nChecking for language violations:', this.uniqueTimestamp)
+
+    const languageViolations = await this.identifyLanguageViolations()
+    if (languageViolations.length === 0) {
+      return results
+    }
+
+    // Add language violations to results
+    const combinedResults = [...results, ...languageViolations]
+    this.logger('After adding language violations:', this.uniqueTimestamp)
+    this.logger(combinedResults, this.uniqueTimestamp)
+
+    return combinedResults
+  }
+
+  async identifyLanguageViolations () {
+    this.logger('Identifying language violations...', this.uniqueTimestamp)
+
+    const violations = []
+
+    if (!this.languageDetection.enabled) {
+      return []
+    }
+
+    const botResponses = this.conversationHistory.filter(msg => msg.role === 'user')
+
+    for (let i = 0; i < botResponses.length; i++) {
+      const botResponse = botResponses[i]
+      const responseIndex = this.conversationHistory.findIndex(msg =>
+        msg.role === 'user' && msg.content === botResponse.content
+      )
+
+      let precedingUserMessage
+
+      if (this.languageDetection.matchUserLanguage) {
+        // Find the preceding user message to check language if matchUserLanguage is true
+        // let expectedLanguage = this.languageDetection.specificLanguage
+        let userMessageLanuguage = null
+        let botMessageLanguage = null
+
+        precedingUserMessage = this.getPrecedingUserMessage(responseIndex)
+
+        if (!precedingUserMessage) {
+          continue // Skip this iteration and continue with the next bot response
+        }
+
+        userMessageLanuguage = await this.detectLanguage(precedingUserMessage.content)
+        botMessageLanguage = await this.detectLanguage(botResponse.content)
+
+        if (userMessageLanuguage !== botMessageLanguage) {
+          violations.push({
+            index: responseIndex,
+            role: 'assistant',
+            statement: botResponse.content,
+            type: 'language',
+            severity: 'High',
+            category: 'Language Violation',
+            reason: 'The question was asked in ' + userMessageLanuguage + ' but the answer was given in ' + botMessageLanguage
+          })
+        }
+      } else {
+        const botMessageLanguage = await this.detectLanguage(botResponse.content)
+
+        const isCorrectLanguage = await this.isInCorrectLanguage(
+          botResponse.content,
+          this.languageDetection.specificLanguage,
+          botMessageLanguage
+        )
+
+        if (!isCorrectLanguage) {
+          violations.push({
+            index: responseIndex,
+            role: 'assistant',
+            statement: botResponse.content,
+            type: 'language',
+            severity: 'High',
+            category: 'Language Violation',
+            reason: 'The answer was given in ' + botMessageLanguage + ' but should have been given in ' + this.languageDetection.specificLanguage
+          })
+        }
+      }
+    }
+
+    this.logger('Found language violations:', this.uniqueTimestamp)
+    this.logger(violations, this.uniqueTimestamp)
+
+    return violations
+  }
+
+  getPrecedingUserMessage (assistantIndex) {
+    if (assistantIndex === 0) {
+      return null
+    }
+
+    return this.conversationHistory[assistantIndex - 1]
+  }
+
+  async detectLanguage (text) {
+    // Need to put this into the prompt file.
+    const systemPrompt = 'You are a language detection expert. Identify the language of the provided text. Respond with a JSON object that has a "detectedLanguage" field containing the language name in English (e.g., "English", "Spanish", "French", etc.).'
+    const userPrompt = `Detect the language of this text: "${text}"`
+
+    const response = await this.sendRequestWithLogging(
+      systemPrompt,
+      userPrompt,
+      'LanguageDetection.txt',
+      'detectedLanguage'
+    )
+
+    if (response && typeof response === 'object' && response.detectedLanguage) {
+      return response.detectedLanguage
+    }
+
+    return response
+  }
+
+  async isInCorrectLanguage (text, expectedLanguage, userLanguage = null) {
+    let systemPrompt
+    let userPrompt
+
+    if (this.languageDetection.matchUserLanguage && userLanguage) {
+      systemPrompt = `You are a language expert. Your task is to determine if a response is in the same language as the user's message. The user's message is in ${userLanguage}. Respond with a JSON object that has an "isCorrectLanguage" field set to true or false, and a "detectedLanguage" field with the name of the detected language.`
+      userPrompt = `Is this text in ${userLanguage}? Respond with the JSON format: "${text}"`
+    } else {
+      systemPrompt = `You are a language expert. Your task is to determine if a text is written in ${expectedLanguage}. Respond with a JSON object that has an "isCorrectLanguage" field set to true or false, and a "detectedLanguage" field with the name of the detected language.`
+      userPrompt = `Is this text in ${expectedLanguage}? Respond with the JSON format: "${text}"`
+    }
+
+    const result = await this.sendRequestWithLogging(
+      systemPrompt,
+      userPrompt,
+      'LanguageCheck.txt',
+      'isCorrectLanguage' // This is the attribute name to extract
+    )
+
+    return result
   }
 }
 
