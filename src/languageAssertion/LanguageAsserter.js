@@ -148,7 +148,8 @@ class LanguageAsserter {
     if (finalUserLanguageResult.tokenUsage) {
       totalTokenUsage.promptTokens += finalUserLanguageResult.tokenUsage.promptTokens || 0
       totalTokenUsage.completionTokens += finalUserLanguageResult.tokenUsage.completionTokens || 0
-      totalTokenUsage.totalTokens += finalUserLanguageResult.tokenUsage.totalTokens || 0
+      totalTokenUsage.totalTokens += finalUserLanguageResult.tokenUsage.promptTokens || 0
+      totalTokenUsage.totalTokens += finalUserLanguageResult.tokenUsage.completionTokens || 0
     }
 
     if (this.config.matchUserLanguage) {
@@ -215,7 +216,8 @@ class LanguageAsserter {
       if (previousLanguageResult.tokenUsage) {
         totalTokenUsage.promptTokens += previousLanguageResult.tokenUsage.promptTokens || 0
         totalTokenUsage.completionTokens += previousLanguageResult.tokenUsage.completionTokens || 0
-        totalTokenUsage.totalTokens += previousLanguageResult.tokenUsage.totalTokens || 0
+        totalTokenUsage.totalTokens += previousLanguageResult.tokenUsage.promptTokens || 0
+        totalTokenUsage.totalTokens += previousLanguageResult.tokenUsage.completionTokens || 0
       }
 
       // Normalize language names for comparison
