@@ -1,6 +1,7 @@
 const Common = require('./common.js')
 const PromptTemplates = require('./prompts.js')
 const TestDataBuilder = require('./testResultBuilder.js')
+const SensitiveInfoDetection = require('../common/SensitiveInfoDetection')
 const _ = require('lodash')
 
 class TranscriptAnalyser {
@@ -1068,11 +1069,9 @@ class TranscriptAnalyser {
   }
 
   async checkForSensitiveInformation () {
-    const sensitiveInfoPrompt = PromptTemplates.DETECT_SENSITIVE_INFO_PROMPT()
+    const sensitiveInfoPrompt = SensitiveInfoDetection.generatePrompt()
 
-    const historyAsString = this.conversationHistory.map((msg, index) => `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`)
-
-    const transcriptAsText = 'Transcript:\n' + historyAsString.join('\n')
+    const transcriptAsText = SensitiveInfoDetection.formatTranscript(this.conversationHistory)
 
     const sensitiveInfoIndices = await this.sendRequestWithLogging(
       sensitiveInfoPrompt,
@@ -1081,18 +1080,9 @@ class TranscriptAnalyser {
       'sensitiveInfoMessages'
     )
 
-    const violationIndices = this.parseViolationIndices(sensitiveInfoIndices)
+    const violationIndices = SensitiveInfoDetection.parseViolationIndices(sensitiveInfoIndices)
 
-    const results = violationIndices
-      ? violationIndices
-        .filter(index => index > 0 && index <= this.conversationHistory.length)
-        .map(index => ({
-          index: index - 1, // Adjust index to match array indexing
-          role: this.conversationHistory[index - 1].role,
-          statement: this.conversationHistory[index - 1].content,
-          type: 'sensitive_info'
-        }))
-      : []
+    const results = SensitiveInfoDetection.mapIndicesToViolations(violationIndices, this.conversationHistory)
 
     // Filter to only include user messages
     const userOnlyResponses = results.filter(message => message.role === 'user')
