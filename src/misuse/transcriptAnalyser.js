@@ -132,6 +132,7 @@ class TranscriptAnalyser {
       this.logResults(`[${analysisId}] Step 7. After confirming violations`, confirmedVilations, 'ResultBreakdown.txt')
 
       // Step 8. Categorised and improve reasoning(each one is done individualy).
+      // We also confirm the violation again in here which we do no neeed to do twice. Need to fix this.
       let gradedResults = await this.classifyAndImproveReasoning(confirmedVilations, history)
       this.logResults(`[${analysisId}] Step 8. After grading results`, gradedResults, 'ResultBreakdown.txt')
 
@@ -169,12 +170,13 @@ class TranscriptAnalyser {
       const normalizedStatement = violation.statement.trim().toLowerCase()
       const existingViolation = statementMap.get(normalizedStatement)
 
-      if (
-        !existingViolation ||
-            violation.type === 'inappropriate' ||
-            (violation.type === 'banned' && existingViolation.type !== 'inappropriate')
-      ) {
+      if (!existingViolation || violation.type === 'inappropriate' || (violation.type === 'banned' && existingViolation.type !== 'inappropriate')) {
         statementMap.set(normalizedStatement, violation)
+      } else {
+        // This is an existing violation, ordinalriy we would want to remove it, but we might want to prioritise another violation.
+        if (violation.type === 'sensitive_info') {
+          statementMap.set(normalizedStatement, violation)
+        }
       }
     })
 
@@ -298,6 +300,8 @@ class TranscriptAnalyser {
   }
 
   async classifyAndImproveReason (violation, history) {
+    // This function should only improve reasoning as the confirmation was done in a previous step!
+
     const domain = this.commonInstance.formatTopicList(this.allowedDomains, true)
     const forbiddenTopics = this.commonInstance.formatTopicList(this.forbiddenTopics, true)
 
@@ -323,7 +327,8 @@ class TranscriptAnalyser {
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
 
     if (!confirmedViolation || !confirmedViolation.deviation || confirmedViolation.deviation.toUpperCase() !== 'YES') {
-      if (!confirmedViolation.inappropriate || confirmedViolation.inappropriate.toUpperCase() === 'YES') {
+      // Ingoring sensitive informaiton for now.
+      if ((!confirmedViolation.inappropriate || confirmedViolation.inappropriate.toUpperCase() === 'YES') || violation?.type === 'sensitive_info') {
         // But wait its innapropriate, so ths is a violation!
       } else {
         return null
@@ -566,6 +571,11 @@ class TranscriptAnalyser {
     // These can all be fired off in parallel.
     const confirmationPromises = violations.map(async (violation) => {
       try {
+        if (violation?.type === 'sensitive_info') {
+          // Not validationg sensitive information. Should improve the prompt so it can in the future.
+          return violation
+        }
+
         const isViolation = await this.isTrueViolation(violation, history)
         if (isViolation === true) {
           return violation
@@ -1070,9 +1080,7 @@ class TranscriptAnalyser {
 
   async checkForSensitiveInformation () {
     const sensitiveInfoPrompt = SensitiveInfoDetection.generatePrompt()
-
     const transcriptAsText = SensitiveInfoDetection.formatTranscript(this.conversationHistory)
-
     const sensitiveInfoIndices = await this.sendRequestWithLogging(
       sensitiveInfoPrompt,
       transcriptAsText,
@@ -1080,9 +1088,9 @@ class TranscriptAnalyser {
       'sensitiveInfoMessages'
     )
 
-    const violationIndices = SensitiveInfoDetection.parseViolationIndices(sensitiveInfoIndices)
+    const indicesArray = sensitiveInfoIndices.split(',').map(Number)
 
-    const results = SensitiveInfoDetection.mapIndicesToViolations(violationIndices, this.conversationHistory)
+    const results = SensitiveInfoDetection.mapIndicesToViolations(indicesArray, this.conversationHistory)
 
     // Filter to only include user messages
     const userOnlyResponses = results.filter(message => message.role === 'user')
