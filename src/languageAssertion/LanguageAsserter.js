@@ -148,7 +148,8 @@ class LanguageAsserter {
     if (finalUserLanguageResult.tokenUsage) {
       totalTokenUsage.promptTokens += finalUserLanguageResult.tokenUsage.promptTokens || 0
       totalTokenUsage.completionTokens += finalUserLanguageResult.tokenUsage.completionTokens || 0
-      totalTokenUsage.totalTokens += finalUserLanguageResult.tokenUsage.totalTokens || 0
+      totalTokenUsage.totalTokens += finalUserLanguageResult.tokenUsage.promptTokens || 0
+      totalTokenUsage.totalTokens += finalUserLanguageResult.tokenUsage.completionTokens || 0
     }
 
     if (this.config.matchUserLanguage) {
@@ -215,7 +216,8 @@ class LanguageAsserter {
       if (previousLanguageResult.tokenUsage) {
         totalTokenUsage.promptTokens += previousLanguageResult.tokenUsage.promptTokens || 0
         totalTokenUsage.completionTokens += previousLanguageResult.tokenUsage.completionTokens || 0
-        totalTokenUsage.totalTokens += previousLanguageResult.tokenUsage.totalTokens || 0
+        totalTokenUsage.totalTokens += previousLanguageResult.tokenUsage.promptTokens || 0
+        totalTokenUsage.totalTokens += previousLanguageResult.tokenUsage.completionTokens || 0
       }
 
       // Normalize language names for comparison
@@ -232,7 +234,7 @@ class LanguageAsserter {
           type: 'language',
           severity: 'High',
           category: 'Language Violation',
-          reason: `The previous assistant message was in ${previousLanguage} but the final user message was in ${finalUserLanguage}`
+          reason: `The previous message was in ${previousLanguage} but the inspected message was in ${finalUserLanguage}`
         })
       }
     } else {
@@ -256,7 +258,7 @@ class LanguageAsserter {
             type: 'language',
             severity: 'High',
             category: 'Language Violation',
-            reason: `The final user message was in ${finalUserLanguage} but should have been in ${this.config.specificLanguage}`
+            reason: `The inspected message was in ${finalUserLanguage} but should have been in ${this.config.specificLanguage}`
           })
         }
       }
@@ -284,7 +286,7 @@ class LanguageAsserter {
         if (violations.length === 0) {
           return {
             result: 'pass',
-            reason: `The final user message is in the specified language (${this.config.specificLanguage}). Note: Used specificLanguage as fallback since no preceding assistant message was found.`,
+            reason: `The inspected message is in the specified language (${this.config.specificLanguage}). Note: Used specificLanguage as fallback since no preceding assistant message was found.`,
             tokenUsage
           }
         } else {
@@ -299,7 +301,7 @@ class LanguageAsserter {
 
       return {
         result: 'skip',
-        reason: 'Unable to compare languages: No assistant message found before the final user message, and matchUserLanguage is enabled without a specificLanguage fallback.',
+        reason: 'Unable to compare languages: No message found before the inspected message, and matchUserLanguage is enabled without a specificLanguage fallback.',
         tokenUsage
       }
     }
@@ -308,8 +310,8 @@ class LanguageAsserter {
       return {
         result: 'pass',
         reason: this.config.matchUserLanguage
-          ? 'The final user message language matches the previous assistant message language.'
-          : `The final user message is in the specified language (${this.config.specificLanguage}).`,
+          ? 'The inspected message language matches the previous message language.'
+          : `The inspected message is in the specified language (${this.config.specificLanguage}).`,
         tokenUsage
       }
     } else {
