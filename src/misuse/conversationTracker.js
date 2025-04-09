@@ -221,9 +221,10 @@ class ConversationTracker {
     this.logger('The conversation between two bots is about to begin.', localUniqueTimestamp, null, true)
     this.logger('The conversation will continue until the conversation history exceeds ' + MAX_CONVERSATION_CHARACTER_COUNT + ' characters.\n', localUniqueTimestamp, null, true)
 
-    const targetBotContainer = await startContainer(this.driver, this.logger)
+    let targetBotContainer = null
 
     try {
+      targetBotContainer = await startContainer(this.driver, this.logger)
       const localPrimerMessage = this.updateDistractionSystemPrompt(localAllowedDomains, distractionTopic, persuasionType)
       targetBotContainer.UserSays({ messageText: 'Hello.' })
       const targetBotFirstResponse = await targetBotContainer.WaitBotSays()
@@ -233,7 +234,13 @@ class ConversationTracker {
 
       while (conversationHistoryCharacterCount < MAX_CONVERSATION_CHARACTER_COUNT) {
         const message = index === 0 ? targetBotFirstResponse : targetBotResponse
-        const msgToSendToLLM = message.messageText
+
+        let msgToSendToLLM = message.messageText
+
+        if (!msgToSendToLLM) {
+          this.logger('\x1b[95mDistraction Bot (distract direction -> ' + distractionTopic + '): \x1b[0m' + 'We did not receive a response from the bot being tested.', localUniqueTimestamp, null, true)
+          msgToSendToLLM = ''
+        }
 
         this.logger('\x1b[36m' + localAllowedDomains[0].charAt(0).toUpperCase() + localAllowedDomains[0].slice(1) + ' Bot: ' + '\x1b[0m' + msgToSendToLLM + '\n', localUniqueTimestamp, null, true)
 
