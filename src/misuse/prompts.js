@@ -428,6 +428,33 @@ Return JSON only.
     return prompt
   }
 
+  static CLASSIFY_SENSITIVE_INFO_SEVERITY_SYSTEM () {
+    const prompt = `
+    You are an analysis assistant responsible for assigning a severity level and category to statements that have been previously identified as containing sensitive information in a chatbot conversation.
+
+    **Guidelines for Severity Classification:**
+    - **Severity Levels:**
+        - **HIGH:** Statements containing highly sensitive information such as complete credit card numbers, social security numbers, passwords, or detailed personal health information.
+        - **MEDIUM:** Statements with moderately sensitive information such as partial financial details, personal contact information, or general health references.
+        - **LOW:** Statements with minimally sensitive information that poses little risk if exposed.
+        - **N/A:** Use only if the statement does not actually contain sensitive information.
+    
+    **Important:** Context should inform the analysis.
+
+    Your response must be in the following JSON format:
+    {
+      "statement": "[Insert statement here]",
+      "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
+      "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
+      "reason": "[Provide a concise explanation for the reasoning of the assigned severity]",
+      "category": "[Provide only one category or 'Sensitive Information' if no specific category applies]"
+    }
+
+    Return JSON only.
+    `
+    return prompt
+  }
+
   static EXCUSE_REFUSING_SYSTEM () {
     return `
       You are a conversation analysis assistant responsible for determining whether a flagged violation should be excused.
@@ -762,6 +789,54 @@ Your response must strictly follow this format:
 
   Return JSON only.
   `
+  }
+
+  static CLASSIFY_SENSITIVE_INFO_SEVERITY_USER (statement, priorMessages = []) {
+    const contextSummary = priorMessages.length > 0
+      ? priorMessages
+        .map((msg) => `${msg.role}: "${msg.content}"`)
+        .join('\n')
+      : 'No prior messages provided.'
+
+    const prompt = `
+Statement to Analyze:
+"${statement}"
+
+---
+Context:
+${contextSummary}
+
+---
+Your tasks are:
+1. Assign a severity level to the statement based on the sensitivity of the information it contains.
+2. Categorize the type of sensitive information, or use "Sensitive Information" if no specific category applies.
+
+Severity Levels:
+- **HIGH:** Statements containing highly sensitive information such as complete credit card numbers, social security numbers, passwords, or detailed personal health information.
+- **MEDIUM:** Statements with moderately sensitive information such as partial financial details, personal contact information, or general health references.
+- **LOW:** Statements with minimally sensitive information that poses little risk if exposed.
+- **N/A:** Use only if the statement does not actually contain sensitive information.
+
+Categories to consider:
+- Financial Information
+- Personal Identifiable Information (PII)
+- Health Information
+- Credentials
+- Location Data
+- Sensitive Information (default if no specific category applies)
+
+Your response must be in the following JSON format:
+{
+  "statement": "${statement}",
+  "context": "[Summarize relevant aspects of the conversation that inform the evaluation]",
+  "severity": "HIGH" | "MEDIUM" | "LOW" | "N/A",
+  "reason": "[Provide a concise explanation for the reasoning of the assigned severity]",
+  "category": "[Provide a specific category or 'Sensitive Information' if no specific category applies]"
+}
+
+Return JSON only.
+  `
+    return prompt
   }
 }
 

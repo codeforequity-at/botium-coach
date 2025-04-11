@@ -7,6 +7,7 @@ const MisuseAsserter = require('./src/misuse/misuseAssertion')
 const ObjectiveAnswerEvaulator = require('./src/objectiveAssertion/ObjectiveAnswerEvaulator')
 const DistractionTopicGenerator = require('./src/distractionTopicGenerator/DistractionTopicGenerator')
 const LanguageAsserter = require('./src/languageAssertion/LanguageAsserter')
+const SensitiveInfoAsserter = require('./src/sensitiveInfoAssertion/SensitiveInfoAsserter')
 
 module.exports = {
   nlpAnalytics: {
@@ -25,5 +26,6 @@ module.exports = {
   MisuseAsserter,
   ObjectiveAnswerEvaulator,
   DistractionTopicGenerator,
-  LanguageAsserter
+  LanguageAsserter,
+  SensitiveInfoAsserter
 }

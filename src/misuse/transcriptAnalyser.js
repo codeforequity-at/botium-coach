@@ -1,6 +1,7 @@
 const Common = require('./common.js')
 const PromptTemplates = require('./prompts.js')
 const TestDataBuilder = require('./testResultBuilder.js')
+const SensitiveInfoDetection = require('../common/SensitiveInfoDetection')
 const _ = require('lodash')
 
 class TranscriptAnalyser {
@@ -118,35 +119,40 @@ class TranscriptAnalyser {
       // Step 4. Get responses that are rude, offesnive or innapropriate
       const inaprpriateViolations = await this.identifyInapropriateViolations()
 
-      // Step 5. Removing any duplictes that might exist.
-      const uniqueViolations = this.getUniqueViolations(topLevelViolations, inaprpriateViolations)
-      this.logResults(`[${analysisId}] Step 5. After removing duplicates`, uniqueViolations, 'ResultBreakdown.txt')
+      // Step 5. Get responses that contain sensitive information
+      const sensitiveInfoViolations = await this.identifySensitiveInfoViolations(analysisId)
+      this.logResults(`[${analysisId}] Step 5. Sensitive Information Violations`, sensitiveInfoViolations, 'ResultBreakdown.txt')
 
-      // Step 6. Confirm violations
+      // Step 6. Removing any duplictes that might exist.
+      const uniqueViolations = this.getUniqueViolations(topLevelViolations, [...inaprpriateViolations, ...sensitiveInfoViolations])
+      this.logResults(`[${analysisId}] Step 6. After removing duplicates`, uniqueViolations, 'ResultBreakdown.txt')
+
+      // Step 7. Confirm violations
       const confirmedVilations = await this.confirmViolations(uniqueViolations, history)
-      this.logResults(`[${analysisId}] Step 6. After confirming violations`, confirmedVilations, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 7. After confirming violations`, confirmedVilations, 'ResultBreakdown.txt')
 
-      // Step 7. Categorised and improve reasoning(each one is done individualy).
+      // Step 8. Categorised and improve reasoning(each one is done individualy).
+      // We also confirm the violation again in here which we do no neeed to do twice. Need to fix this.
       let gradedResults = await this.classifyAndImproveReasoning(confirmedVilations, history)
-      this.logResults(`[${analysisId}] Step 7. After grading results`, gradedResults, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 8. After grading results`, gradedResults, 'ResultBreakdown.txt')
 
-      // Step 8. Filter out instances where the bot is asking the user to repeat what they said.
+      // Step 9. Filter out instances where the bot is asking the user to repeat what they said.
       gradedResults = await this.removeRepititionRequests(gradedResults)
-      this.logResults(`[${analysisId}] Step 8. After removing violations that are repitition requests`, gradedResults, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 9. After removing violations that are repitition requests`, gradedResults, 'ResultBreakdown.txt')
 
-      // Step 9. Filter out any greetings or farewells
+      // Step 10. Filter out any greetings or farewells
       gradedResults = await this.removeGreetingsAndGoodByes(gradedResults)
-      this.logResults(`[${analysisId}] Step 9. After removing greetings and farewells.`, gradedResults, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 10. After removing greetings and farewells.`, gradedResults, 'ResultBreakdown.txt')
 
-      // Step 10. Filter out severities of N/A
+      // Step 11. Filter out severities of N/A
       gradedResults = this.removeNonApplicableSeverity(gradedResults)
-      this.logResults(`[${analysisId}] Step 10. After removing results with severity of N/A`, gradedResults, 'ResultBreakdown.txt')
+      this.logResults(`[${analysisId}] Step 11. After removing results with severity of N/A`, gradedResults, 'ResultBreakdown.txt')
 
-      // Step 11. Check for language violations if language detection is enabled
+      // Step 12. Check for language violations if language detection is enabled
       let finalResults = gradedResults
       if (this.languageDetection?.enabled) {
         finalResults = await this.checkLanguageViolations(gradedResults)
-        this.logResults(`[${analysisId}] Step 11. After checking language violations`, finalResults, 'ResultBreakdown.txt')
+        this.logResults(`[${analysisId}] Step 12. After checking language violations`, finalResults, 'ResultBreakdown.txt')
       }
 
       return this.prepareTestResults(finalResults, cycleNumber, distractionTopic)
@@ -164,12 +170,13 @@ class TranscriptAnalyser {
       const normalizedStatement = violation.statement.trim().toLowerCase()
       const existingViolation = statementMap.get(normalizedStatement)
 
-      if (
-        !existingViolation ||
-            violation.type === 'inappropriate' ||
-            (violation.type === 'banned' && existingViolation.type !== 'inappropriate')
-      ) {
+      if (!existingViolation || violation.type === 'inappropriate' || (violation.type === 'banned' && existingViolation.type !== 'inappropriate')) {
         statementMap.set(normalizedStatement, violation)
+      } else {
+        // This is an existing violation, ordinalriy we would want to remove it, but we might want to prioritise another violation.
+        if (violation.type === 'sensitive_info') {
+          statementMap.set(normalizedStatement, violation)
+        }
       }
     })
 
@@ -232,6 +239,9 @@ class TranscriptAnalyser {
     } else if (violation.type === 'inappropriate') {
       detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM(domainsAsString)
       detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
+    } else if (violation.type === 'sensitive_info') {
+      detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM(domainsAsString)
+      detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
     }
 
     return { detectionSystemPrompt, detectionUserPrompt }
@@ -250,6 +260,8 @@ class TranscriptAnalyser {
       detectionSystemPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_SYSTEM(domain)
     } else if (violation.type === 'inappropriate') {
       detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM()
+    } else if (violation.type === 'sensitive_info') {
+      detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM()
     }
     let detectionUserPrompt
     if (violation.type === 'banned') {
@@ -258,11 +270,13 @@ class TranscriptAnalyser {
       detectionUserPrompt = PromptTemplates.DETECT_DOMAIN_DEVIATION_USER(violation.statement, domain, priorMessages)
     } else if (violation.type === 'inappropriate') {
       detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
+    } else if (violation.type === 'sensitive_info') {
+      detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
     }
     const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'ViolationConfirmation.txt', null, 'reasoning')
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
     let result = false
-    if (violation.type === 'inappropriate') {
+    if (violation.type === 'inappropriate' || violation.type === 'sensitive_info') {
       if (confirmedViolation && confirmedViolation.inappropriate === 'YES') {
         if (!await this.excuseRefusal(violation.statement, priorMessages)) {
           result = true
@@ -286,6 +300,8 @@ class TranscriptAnalyser {
   }
 
   async classifyAndImproveReason (violation, history) {
+    // This function should only improve reasoning as the confirmation was done in a previous step!
+
     const domain = this.commonInstance.formatTopicList(this.allowedDomains, true)
     const forbiddenTopics = this.commonInstance.formatTopicList(this.forbiddenTopics, true)
 
@@ -311,7 +327,8 @@ class TranscriptAnalyser {
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
 
     if (!confirmedViolation || !confirmedViolation.deviation || confirmedViolation.deviation.toUpperCase() !== 'YES') {
-      if (!confirmedViolation.inappropriate || confirmedViolation.inappropriate.toUpperCase() === 'YES') {
+      // Ingoring sensitive informaiton for now.
+      if ((!confirmedViolation.inappropriate || confirmedViolation.inappropriate.toUpperCase() === 'YES') || violation?.type === 'sensitive_info') {
         // But wait its innapropriate, so ths is a violation!
       } else {
         return null
@@ -346,6 +363,12 @@ class TranscriptAnalyser {
     } else if (violation.type === 'inappropriate') {
       classificationPromptSystem = PromptTemplates.CLASSIFY_INAPPROPRIATE_SEVERITY_SYSTEM()
       classificationPromptUser = PromptTemplates.CLASSIFY_INAPPROPRIATE_SEVERITY_USER(
+        violation.statement,
+        priorMessages
+      )
+    } else if (violation.type === 'sensitive_info') {
+      classificationPromptSystem = PromptTemplates.CLASSIFY_SENSITIVE_INFO_SEVERITY_SYSTEM()
+      classificationPromptUser = PromptTemplates.CLASSIFY_SENSITIVE_INFO_SEVERITY_USER(
         violation.statement,
         priorMessages
       )
@@ -548,6 +571,11 @@ class TranscriptAnalyser {
     // These can all be fired off in parallel.
     const confirmationPromises = violations.map(async (violation) => {
       try {
+        if (violation?.type === 'sensitive_info') {
+          // Not validationg sensitive information. Should improve the prompt so it can in the future.
+          return violation
+        }
+
         const isViolation = await this.isTrueViolation(violation, history)
         if (isViolation === true) {
           return violation
@@ -1037,6 +1065,42 @@ class TranscriptAnalyser {
     )
 
     return result
+  }
+
+  async identifySensitiveInfoViolations (analysisId) {
+    this.logger(`[${analysisId}] Identifying if the conversation contains sensitive information...`, this.uniqueTimestamp)
+
+    const result = await this.checkForSensitiveInformation()
+
+    this.logger(`[${analysisId}] Found messages containing sensitive information: `, this.uniqueTimestamp)
+    this.logger(result, this.uniqueTimestamp)
+
+    return result
+  }
+
+  async checkForSensitiveInformation () {
+    const sensitiveInfoPrompt = SensitiveInfoDetection.generatePrompt()
+    const transcriptAsText = SensitiveInfoDetection.formatTranscript(this.conversationHistory)
+    const sensitiveInfoIndices = await this.sendRequestWithLogging(
+      sensitiveInfoPrompt,
+      transcriptAsText,
+      'SensitiveInfoPrompt.txt',
+      'sensitiveInfoMessages'
+    )
+
+    const indicesArray = sensitiveInfoIndices.split(',').map(Number)
+
+    const results = SensitiveInfoDetection.mapIndicesToViolations(indicesArray, this.conversationHistory)
+
+    // Filter to only include user messages
+    const userOnlyResponses = results.filter(message => message.role === 'user')
+
+    this.logger('PROMPT: \n ' + sensitiveInfoPrompt, this.uniqueTimestamp, 'SensitiveInfoPrompt.txt')
+    this.logger(transcriptAsText, this.uniqueTimestamp, 'SensitiveInfoPrompt.txt')
+    this.logger('\n \nLLM RESPONSE: \n' + sensitiveInfoIndices, this.uniqueTimestamp, 'SensitiveInfoPrompt.txt')
+    this.logger('\n' + JSON.stringify(results, null, 2), this.uniqueTimestamp, 'SensitiveInfoPrompt.txt')
+
+    return userOnlyResponses
   }
 }
 
