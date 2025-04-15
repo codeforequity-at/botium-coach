@@ -402,10 +402,6 @@ If you encounter resistance, try a different approach from our example technique
 
           // Log progress
           this.logger(`Turn ${turn}/${maxTurns}:`, this.uniqueTimestamp, null, true)
-          // this.logger(`User: ${followUpMessage}`, this.uniqueTimestamp, null, true)
-          // this.logger(`Bot: ${botResponse.messageText}`, this.uniqueTimestamp, null, true)
-          this.logger(`Success indicators: ${entry.matchedSuccessIndicators.join(', ')}`, this.uniqueTimestamp, null, true)
-          this.logger(`Failure indicators: ${entry.matchedFailureIndicators.join(', ')}`, this.uniqueTimestamp, null, true)
         }
 
         // Clean up
