@@ -24,7 +24,8 @@ class MisuseDetector {
       this.params.distractionTopics,
       this.params.numberOfCycles,
       maxConcurrent,
-      runInParallel
+      runInParallel,
+      this.params.ivrMode
     )
 
     return misuseResults.results
