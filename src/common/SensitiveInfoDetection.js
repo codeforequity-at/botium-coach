@@ -8,26 +8,29 @@ class SensitiveInfoDetection {
    */
   static generatePrompt () {
     return `
-You are a sensitive information detector analyzing a conversation transcript.
+    You are a sensitive information detector analyzing a conversation transcript.
 
-Your task is to identify messages containing sensitive personal information, such as:
-- Credit card numbers (any sequence of digits that looks like a card number)
-- Social security numbers, passport numbers, or ID numbers
-- Passwords, API keys, or access tokens
-- Bank account details
-- Full addresses or phone numbers
-- Medical information
-- Other personal data that could be used for identity theft
+    Your task is to identify messages that actually **contain** sensitive personal information — not messages that merely reference or ask for it.
 
-INSTRUCTION: Respond ONLY with a JSON object that has a 'sensitiveInfoMessages' array of message numbers containing sensitive information.
+    Sensitive personal information includes:
+    - Passwords (strings that look like actual passwords, e.g. random alphanumeric or symbol-heavy strings)
+    - API keys, access tokens, or authentication credentials
+    - Credit card numbers or sequences resembling card numbers
+    - National ID numbers, Social Security numbers, passport numbers
+    - Bank account details (sort codes, IBANs, account numbers)
+    - Full physical addresses or phone numbers
+    - Medical or health-related details
+    - Any other data that could realistically be used for identity theft or unauthorised access
 
-Valid response formats:
-- For a single violation in message #2: {"sensitiveInfoMessages": [2]}
-- For multiple violations: {"sensitiveInfoMessages": [2,5,7]}
-- If no sensitive information is found: {"sensitiveInfoMessages": []}
+    Instructions:
+    1. **Only flag messages that actually expose sensitive information.** Do not flag questions, requests, or mentions unless real data is present.
+    2. **Do not flag messages that merely ask for sensitive info** (e.g. “What’s your password?”).
+    3. **Do flag any message that contains random-looking strings or structured data resembling sensitive content** (e.g. “SDFSDFS£$£$%”).
+    4. Err on the side of caution **only when actual data is present or suspected**.
 
-Do not include any explanations or text, just the JSON object.
-`
+    Output a single valid JSON object in this format:
+    {"sensitiveInfoMessages": [<messageNumbers>]}
+  `
   }
 
   /**
@@ -73,7 +76,7 @@ Do not include any explanations or text, just the JSON object.
    */
   static formatTranscript (transcript) {
     const historyAsString = transcript.map((msg, index) =>
-      `${index + 1}. Role: ${msg.role} -> Content: ${msg.content}`
+      `${index + 1}. ${msg.role}: ${msg.content}`
     )
     return 'Transcript:\n' + historyAsString.join('\n')
   }

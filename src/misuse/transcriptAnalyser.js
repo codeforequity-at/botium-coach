@@ -1016,7 +1016,7 @@ class TranscriptAnalyser {
       if (this.languageDetection.matchUserLanguage) {
         // Find the preceding user message to check language if matchUserLanguage is true
         // let expectedLanguage = this.languageDetection.specificLanguage
-        let userMessageLanuguage = null
+        let userMessageLanguage = null
         let botMessageLanguage = null
 
         precedingUserMessage = this.getPrecedingUserMessage(responseIndex)
@@ -1025,10 +1025,10 @@ class TranscriptAnalyser {
           continue // Skip this iteration and continue with the next bot response
         }
 
-        userMessageLanuguage = await this.detectLanguage(precedingUserMessage.content)
+        userMessageLanguage = await this.detectLanguage(precedingUserMessage.content)
         botMessageLanguage = await this.detectLanguage(botResponse.content)
 
-        if (userMessageLanuguage !== botMessageLanguage) {
+        if (this.compareLanguages(userMessageLanguage, botMessageLanguage) === false) {
           violations.push({
             index: responseIndex,
             role: 'assistant',
@@ -1036,7 +1036,7 @@ class TranscriptAnalyser {
             type: 'language',
             severity: 'High',
             category: 'Language Violation',
-            reason: 'The question was asked in ' + userMessageLanuguage + ' but the answer was given in ' + botMessageLanguage
+            reason: 'The question was asked in ' + userMessageLanguage + ' but the answer was given in ' + botMessageLanguage
           })
         }
       } else {
@@ -1100,21 +1100,27 @@ class TranscriptAnalyser {
     let userPrompt
 
     if (this.languageDetection.matchUserLanguage && userLanguage) {
+      console.log('1')
       systemPrompt = `You are a language expert. Your task is to determine if a response is in the same language as the user's message. The user's message is in ${userLanguage}. Respond with a JSON object that has an "isCorrectLanguage" field set to true or false, and a "detectedLanguage" field with the name of the detected language.`
       userPrompt = `Is this text in ${userLanguage}? Respond with the JSON format: "${text}"`
     } else {
+      console.log('2')
       systemPrompt = `You are a language expert. Your task is to determine if a text is written in ${expectedLanguage}. Respond with a JSON object that has an "isCorrectLanguage" field set to true or false, and a "detectedLanguage" field with the name of the detected language.`
       userPrompt = `Is this text in ${expectedLanguage}? Respond with the JSON format: "${text}"`
     }
 
-    const result = await this.sendRequestWithLogging(
+    const detectedLanguage = await this.sendRequestWithLogging(
       systemPrompt,
       userPrompt,
       'LanguageCheck.txt',
-      'isCorrectLanguage' // This is the attribute name to extract
+      'detectedLanguage' // This is the attribute name to extract
     )
 
-    return result
+    if (this.languageDetection.matchUserLanguage && userLanguage) {
+      return this.compareLanguages(detectedLanguage, userLanguage)
+    } else {
+      return this.compareLanguages(detectedLanguage, this.languageDetection.specificLanguage)
+    }
   }
 
   async identifySensitiveInfoViolations (analysisId) {
@@ -1203,6 +1209,12 @@ class TranscriptAnalyser {
     this.logger('\n' + JSON.stringify(results, null, 2), this.uniqueTimestamp, 'RestrictedPhrasesPrompt.txt')
 
     return filteredResults
+  }
+
+  compareLanguages (lang1, lang2) {
+    if (!lang1 || !lang2) return false
+    // Remove all whitespace and perform case-sensitive comparison
+    return lang1.replace(/\s+/g, '') === lang2.replace(/\s+/g, '')
   }
 }
 
