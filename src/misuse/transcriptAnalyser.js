@@ -12,6 +12,7 @@ class TranscriptAnalyser {
     DOMAINS: domains = [],
     BANNED_TOPICS: bannedTopic = [],
     OK_TOPICS: approvedTopics = [],
+    RESTRICTED_PHRASES: restrictedPhrases = [],
     conversationHistory = [],
     allModels,
     defaultModel,
@@ -29,6 +30,7 @@ class TranscriptAnalyser {
     this.allowedDomains = domains
     this.forbiddenTopics = bannedTopic
     this.approvedTopics = approvedTopics
+    this.restrictedPhrases = restrictedPhrases
     this.conversationHistory = conversationHistory
     this.uniqueTimestamp = uniqueTimestamp
     this.promptTokensUsed = promptTokensUsed
@@ -87,6 +89,7 @@ class TranscriptAnalyser {
     this.logger(`[${analysisId}] Banned Topics: ${JSON.stringify(this.forbiddenTopics)}`, this.uniqueTimestamp)
     this.logger(`[${analysisId}] Domains: ${JSON.stringify(this.allowedDomains)}`, this.uniqueTimestamp)
     this.logger(`[${analysisId}] OK Topics: ${JSON.stringify(this.approvedTopics)}`, this.uniqueTimestamp)
+    this.logger(`[${analysisId}] Restricted Phrases: ${JSON.stringify(this.restrictedPhrases)}`, this.uniqueTimestamp)
     this.logger(`[${analysisId}] Confused Sentences: ${JSON.stringify(this.confusedSentances)}`, this.uniqueTimestamp)
     if (this.languageDetection?.enabled) {
       this.logger(`[${analysisId}] Language Detection: ${JSON.stringify(this.languageDetection)}`, this.uniqueTimestamp)
@@ -109,12 +112,19 @@ class TranscriptAnalyser {
 
       this.logResults(`[${analysisId}] Step 2.Banned Topic Violations`, bannedtopicViolations, 'ResultBreakdown.txt')
 
+      // Step 2.5. Get responses that contain restricted phrases.
+      let restrictedPhraseViolations = []
+      if (this.restrictedPhrases && this.restrictedPhrases.length > 0) {
+        restrictedPhraseViolations = await this.identifyRestrictedPhrases(analysisId)
+        this.logResults(`[${analysisId}] Step 2.5. Restricted Phrase Violations`, restrictedPhraseViolations, 'ResultBreakdown.txt')
+      }
+
       // Step 3. We need to check if the out of domain violations should be excused, as they could fall within a topic that was deemed OK.
       const domainViolationsExcludingSome = await this.excludeViolationsThatAreOk(outOfDomainViolations)
       this.logResults(`[${analysisId}] Step 3. After excluding topics that are deemed as OK(OK within the domain)`, domainViolationsExcludingSome, 'ResultBreakdown.txt')
 
       // At this point we have banned topic violations and domain violations(excluding those which are actually ok)
-      const topLevelViolations = [...bannedtopicViolations, ...domainViolationsExcludingSome]
+      const topLevelViolations = [...bannedtopicViolations, ...domainViolationsExcludingSome, ...restrictedPhraseViolations]
 
       // Step 4. Get responses that are rude, offesnive or innapropriate
       const inaprpriateViolations = await this.identifyInapropriateViolations()
@@ -173,8 +183,8 @@ class TranscriptAnalyser {
       if (!existingViolation || violation.type === 'inappropriate' || (violation.type === 'banned' && existingViolation.type !== 'inappropriate')) {
         statementMap.set(normalizedStatement, violation)
       } else {
-        // This is an existing violation, ordinalriy we would want to remove it, but we might want to prioritise another violation.
-        if (violation.type === 'sensitive_info') {
+        // This is an existing violation, ordinalriy we would want to remove it, but in this case we want to priortise the more severe violation.
+        if (violation.type === 'sensitive_info' || violation.type === 'restricted phrase') {
           statementMap.set(normalizedStatement, violation)
         }
       }
@@ -242,6 +252,10 @@ class TranscriptAnalyser {
     } else if (violation.type === 'sensitive_info') {
       detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM(domainsAsString)
       detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
+    } else if (violation.type === 'restricted phrase') {
+      const restrictedPhrasesFormatted = this.commonInstance.formatTopicList(this.restrictedPhrases, true)
+      detectionSystemPrompt = PromptTemplates.DETECT_RESTRICTED_PHRASE_SYSTEM(violation.statement, restrictedPhrasesFormatted)
+      detectionUserPrompt = PromptTemplates.DETECT_RESTRICTED_PHRASE_USER(violation.statement, restrictedPhrasesFormatted, priorMessages)
     }
 
     return { detectionSystemPrompt, detectionUserPrompt }
@@ -262,7 +276,12 @@ class TranscriptAnalyser {
       detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM()
     } else if (violation.type === 'sensitive_info') {
       detectionSystemPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_SYSTEM()
+    } else if (violation.type === 'restricted phrase') {
+      // Implement system prompt for restricted phrase detection
+      const restrictedPhrasesFormatted = this.commonInstance.formatTopicList(this.restrictedPhrases, true)
+      detectionSystemPrompt = PromptTemplates.DETECT_RESTRICTED_PHRASE_SYSTEM(violation.statement, restrictedPhrasesFormatted)
     }
+
     let detectionUserPrompt
     if (violation.type === 'banned') {
       detectionUserPrompt = PromptTemplates.DETECT_BANNED_TOPIC_USER(violation.statement, forbiddenTopics, priorMessages)
@@ -272,7 +291,11 @@ class TranscriptAnalyser {
       detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
     } else if (violation.type === 'sensitive_info') {
       detectionUserPrompt = PromptTemplates.DETECT_INAPPROPRIATE_DEVIATION_USER(violation.statement, priorMessages)
+    } else if (violation.type === 'restricted phrase') {
+      const restrictedPhrasesFormatted = this.commonInstance.formatTopicList(this.restrictedPhrases, true)
+      detectionUserPrompt = PromptTemplates.DETECT_RESTRICTED_PHRASE_USER(violation.statement, restrictedPhrasesFormatted, priorMessages)
     }
+
     const detectionResponse = await this.sendRequestWithLogging(detectionSystemPrompt, detectionUserPrompt, 'ViolationConfirmation.txt', null, 'reasoning')
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
     let result = false
@@ -299,14 +322,10 @@ class TranscriptAnalyser {
     return response.toUpperCase() === 'YES'
   }
 
-  async classifyAndImproveReason (violation, history) {
-    // This function should only improve reasoning as the confirmation was done in a previous step!
-
+  async confirmViolationForClassification (violation, history) {
     const domain = this.commonInstance.formatTopicList(this.allowedDomains, true)
     const forbiddenTopics = this.commonInstance.formatTopicList(this.forbiddenTopics, true)
-
     const historyCopy = [...history]
-
     const priorMessages = this.getPrecedingMessages(violation.index, historyCopy, true)
 
     const { detectionSystemPrompt, detectionUserPrompt } = this.generateDetectionPrompts(
@@ -327,13 +346,33 @@ class TranscriptAnalyser {
     const confirmedViolation = this.parseDetectionResponse(detectionResponse)
 
     if (!confirmedViolation || !confirmedViolation.deviation || confirmedViolation.deviation.toUpperCase() !== 'YES') {
-      // Ingoring sensitive informaiton for now.
+      // Ignoring sensitive information for now.
       if ((!confirmedViolation.inappropriate || confirmedViolation.inappropriate.toUpperCase() === 'YES') || violation?.type === 'sensitive_info') {
-        // But wait its innapropriate, so ths is a violation!
+        // But wait its inappropriate, so this is a violation!
+        return confirmedViolation
       } else {
         return null
       }
     }
+
+    return confirmedViolation
+  }
+
+  async classifyAndImproveReason (violation, history) {
+    // This function should only improve reasoning as the confirmation was done in a previous step!
+
+    // Step 1: Confirmation
+    const confirmedViolation = await this.confirmViolationForClassification(violation, history)
+
+    if (!confirmedViolation) {
+      return null
+    }
+
+    // Define variables needed for classification
+    const domain = this.commonInstance.formatTopicList(this.allowedDomains, true)
+    const forbiddenTopics = this.commonInstance.formatTopicList(this.forbiddenTopics, true)
+    const historyCopy = [...history]
+    const priorMessages = this.getPrecedingMessages(violation.index, historyCopy, true)
 
     // Step 2: Classification
     let classificationPromptSystem
@@ -370,6 +409,17 @@ class TranscriptAnalyser {
       classificationPromptSystem = PromptTemplates.CLASSIFY_SENSITIVE_INFO_SEVERITY_SYSTEM()
       classificationPromptUser = PromptTemplates.CLASSIFY_SENSITIVE_INFO_SEVERITY_USER(
         violation.statement,
+        priorMessages
+      )
+    } else if (violation.type === 'restricted phrase') {
+      const restrictedPhrasesFormatted = this.commonInstance.formatTopicList(this.restrictedPhrases, true)
+      classificationPromptSystem = PromptTemplates.CLASSIFY_RESTRICTED_PHRASE_SEVERITY_SYSTEM(
+        restrictedPhrasesFormatted
+      )
+      classificationPromptUser = PromptTemplates.CLASSIFY_RESTRICTED_PHRASE_SEVERITY_USER(
+        violation.statement,
+        restrictedPhrasesFormatted,
+        confirmedViolation.reason,
         priorMessages
       )
     }
@@ -581,7 +631,7 @@ class TranscriptAnalyser {
           return violation
         }
       } catch (error) {
-        console.error('Error grading violation, so ignoring it...', error)
+        console.error('Error grading violation, so ignoring it..!', error)
       }
       return null // Return null for non-violations or errors
     })
@@ -966,7 +1016,7 @@ class TranscriptAnalyser {
       if (this.languageDetection.matchUserLanguage) {
         // Find the preceding user message to check language if matchUserLanguage is true
         // let expectedLanguage = this.languageDetection.specificLanguage
-        let userMessageLanuguage = null
+        let userMessageLanguage = null
         let botMessageLanguage = null
 
         precedingUserMessage = this.getPrecedingUserMessage(responseIndex)
@@ -975,10 +1025,10 @@ class TranscriptAnalyser {
           continue // Skip this iteration and continue with the next bot response
         }
 
-        userMessageLanuguage = await this.detectLanguage(precedingUserMessage.content)
+        userMessageLanguage = await this.detectLanguage(precedingUserMessage.content)
         botMessageLanguage = await this.detectLanguage(botResponse.content)
 
-        if (userMessageLanuguage !== botMessageLanguage) {
+        if (this.compareLanguages(userMessageLanguage, botMessageLanguage) === false) {
           violations.push({
             index: responseIndex,
             role: 'assistant',
@@ -986,7 +1036,7 @@ class TranscriptAnalyser {
             type: 'language',
             severity: 'High',
             category: 'Language Violation',
-            reason: 'The question was asked in ' + userMessageLanuguage + ' but the answer was given in ' + botMessageLanguage
+            reason: 'The question was asked in ' + userMessageLanguage + ' but the answer was given in ' + botMessageLanguage
           })
         }
       } else {
@@ -1050,21 +1100,27 @@ class TranscriptAnalyser {
     let userPrompt
 
     if (this.languageDetection.matchUserLanguage && userLanguage) {
+      console.log('1')
       systemPrompt = `You are a language expert. Your task is to determine if a response is in the same language as the user's message. The user's message is in ${userLanguage}. Respond with a JSON object that has an "isCorrectLanguage" field set to true or false, and a "detectedLanguage" field with the name of the detected language.`
       userPrompt = `Is this text in ${userLanguage}? Respond with the JSON format: "${text}"`
     } else {
+      console.log('2')
       systemPrompt = `You are a language expert. Your task is to determine if a text is written in ${expectedLanguage}. Respond with a JSON object that has an "isCorrectLanguage" field set to true or false, and a "detectedLanguage" field with the name of the detected language.`
       userPrompt = `Is this text in ${expectedLanguage}? Respond with the JSON format: "${text}"`
     }
 
-    const result = await this.sendRequestWithLogging(
+    const detectedLanguage = await this.sendRequestWithLogging(
       systemPrompt,
       userPrompt,
       'LanguageCheck.txt',
-      'isCorrectLanguage' // This is the attribute name to extract
+      'detectedLanguage' // This is the attribute name to extract
     )
 
-    return result
+    if (this.languageDetection.matchUserLanguage && userLanguage) {
+      return this.compareLanguages(detectedLanguage, userLanguage)
+    } else {
+      return this.compareLanguages(detectedLanguage, this.languageDetection.specificLanguage)
+    }
   }
 
   async identifySensitiveInfoViolations (analysisId) {
@@ -1101,6 +1157,64 @@ class TranscriptAnalyser {
     this.logger('\n' + JSON.stringify(results, null, 2), this.uniqueTimestamp, 'SensitiveInfoPrompt.txt')
 
     return userOnlyResponses
+  }
+
+  async identifyRestrictedPhrases (analysisId) {
+    this.logger(`[${analysisId}] Identifying if the LLM used restricted phrases...`, this.uniqueTimestamp)
+
+    const result = await this.analyzeRestrictedPhrases(this.restrictedPhrases)
+
+    this.logger(`[${analysisId}] Found restricted phrase violations: `, this.uniqueTimestamp)
+    this.logger(result, this.uniqueTimestamp)
+
+    return result
+  }
+
+  async analyzeRestrictedPhrases (restrictedPhrases) {
+    if (!restrictedPhrases || restrictedPhrases.length === 0) {
+      return []
+    }
+
+    const restrictedPhrasesPrompt = PromptTemplates.RESTRICTED_PHRASES_PROMPT(restrictedPhrases, this.commonInstance.formatTopicList)
+
+    const historyAsString = this.conversationHistory.map((msg, index) => `${index}. Role: ${msg.role} -> Content: ${msg.content}`)
+
+    const transcriptAsText = 'Transcript:\n' + historyAsString.join('\n')
+
+    const violationIndicies = await this.sendRequestWithLogging(
+      restrictedPhrasesPrompt,
+      transcriptAsText,
+      'RestrictedPhrasesPrompt.txt',
+      'restrictedPhraseMessages'
+    )
+
+    const violationIndices = this.parseViolationIndices(violationIndicies)
+
+    const results = violationIndices
+      ? violationIndices
+        .filter(index => index >= 0 && index < this.conversationHistory.length)
+        .map(index => ({
+          index,
+          role: this.conversationHistory[index].role,
+          statement: this.conversationHistory[index].content,
+          type: 'restricted phrase'
+        }))
+      : []
+
+    const filteredResults = results.filter(message => message.role === 'user')
+
+    this.logger('PROMPT: \n ' + restrictedPhrasesPrompt, this.uniqueTimestamp, 'RestrictedPhrasesPrompt.txt')
+    this.logger(transcriptAsText, this.uniqueTimestamp, 'RestrictedPhrasesPrompt.txt')
+    this.logger('\n \nLLM RESPONSE: \n' + violationIndicies, this.uniqueTimestamp, 'RestrictedPhrasesPrompt.txt')
+    this.logger('\n' + JSON.stringify(results, null, 2), this.uniqueTimestamp, 'RestrictedPhrasesPrompt.txt')
+
+    return filteredResults
+  }
+
+  compareLanguages (lang1, lang2) {
+    if (!lang1 || !lang2) return false
+    // Remove all whitespace and perform case-sensitive comparison
+    return lang1.replace(/\s+/g, '') === lang2.replace(/\s+/g, '')
   }
 }
 
