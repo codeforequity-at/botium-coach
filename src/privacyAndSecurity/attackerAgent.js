@@ -22,6 +22,7 @@ class AttackerAgent {
     this.BANNED_TOPICS = params.forbiddenTopics || []
     this.approvedTopics = params.approvedTopics || []
     this.attackMode = params.attackMode || 'prompt-injection'
+    this.maxTurns = params.maxTurns || null
     this.logger = logger
     this.commonInstance = new Common(this.logger)
     this.llmManager = params.llm
@@ -322,7 +323,7 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
   async run (targetChatbot) {
     const transcript = []
     const domain = this.allowedDomains[0] || 'general'
-    const maxTurns = this.attackConfig.maxTurns || 5
+    const maxTurns = this.maxTurns || this.attackConfig.maxTurns || 5
 
     this.logger(`Beginning attack run against target chatbot in domain: ${domain}`, this.uniqueTimestamp, null, true)
     this.logger(`Max conversation turns: ${maxTurns}`, this.uniqueTimestamp, null, true)
