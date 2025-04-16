@@ -14,13 +14,9 @@ class AttackerAgent {
     this.allowedDomains = params.allowedDomains || []
     this.primerMessage = params.primerMessage || { role: 'system', content: '' }
     this.conversationHistory = params.conversationHistory || []
-    this.IGNORED_SENTENCES = params.ignoredSentences || []
     this.uniqueTimestamp = params.uniqueTimestamp || null
     this.promptTokensUsed = params.promptTokensUsed || 0
     this.completionTokensUsed = params.completionTokensUsed || 0
-    this.CONFUSED_SENTANCES = params.confusedSentences || []
-    this.BANNED_TOPICS = params.forbiddenTopics || []
-    this.approvedTopics = params.approvedTopics || []
     this.attackMode = params.attackMode || 'prompt-injection'
     this.maxTurns = params.maxTurns || null
     this.logger = logger
