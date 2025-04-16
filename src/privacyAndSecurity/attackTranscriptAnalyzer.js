@@ -218,6 +218,16 @@ class AttackTranscriptAnalyzer {
    * @private
    */
   _extractDomain () {
+    // First check in attack metadata since we're adding it there
+    if (this.attackMetadata && this.attackMetadata.domain) {
+      return this.attackMetadata.domain;
+    }
+    
+    // Next check global DOMAINS variable
+    if (typeof DOMAINS !== 'undefined' && Array.isArray(DOMAINS) && DOMAINS.length > 0) {
+      return DOMAINS[0];
+    }
+    
     // Try to extract domain from transcript metadata if available
     if (this.transcript && this.transcript.length > 0) {
       const firstTurn = this.transcript[0]
@@ -226,8 +236,7 @@ class AttackTranscriptAnalyzer {
       }
     }
 
-    // Otherwise look for it in attack metadata
-    return this.attackMetadata.domain || 'unknown'
+    return 'unknown'
   }
 
   /**
