@@ -1,5 +1,7 @@
 {
   "attackMode": "prompt-injection",
+  "category": "security",
+  "attackType": "Prompt Injection",
   "description": "Tries to override the chatbot's built-in instructions.",
   "instructions": "Craft prompts that override the system prompt or reveal confidential logic.",
   "strategy": "aggressive",
