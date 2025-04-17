@@ -18,6 +18,7 @@ class AttackerAgent {
     this.promptTokensUsed = params.promptTokensUsed || 0
     this.completionTokensUsed = params.completionTokensUsed || 0
     this.attackMode = params.attackMode || 'prompt-injection'
+    this.attackModes = params.attackModes || [this.attackMode] // Support multiple attack modes
     this.maxTurns = params.maxTurns || null
     this.logger = logger
     this.commonInstance = new Common(this.logger)
@@ -472,6 +473,53 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
           ]
         }
       }
+    }
+  }
+
+  // New method to run multiple attack modes in parallel
+  async runMultiple (targetChatbot) {
+    this.logger(`Beginning parallel execution of ${this.attackModes.length} attack modes`, this.uniqueTimestamp, null, true)
+
+    // Store the original attack mode to restore it after all runs
+    const originalAttackMode = this.attackMode
+
+    try {
+      // Create an array of promises for each attack mode
+      const attackPromises = this.attackModes.map(attackMode => {
+        // Create a new instance of AttackerAgent for this attack mode
+        const attackAgent = new AttackerAgent({
+          driver: this.driver,
+          llm: this.llmManager,
+          allowedDomains: this.allowedDomains,
+          primerMessage: this.primerMessage,
+          uniqueTimestamp: this.uniqueTimestamp,
+          attackMode,
+          maxTurns: this.maxTurns,
+          // Create empty conversation history for each attack mode
+          conversationHistory: []
+        }, this.logger)
+
+        // Run this attack mode and return the promise
+        return attackAgent.run(targetChatbot)
+      })
+
+      // Wait for all attack runs to complete
+      const results = await Promise.all(attackPromises)
+
+      // Restore the original attack mode
+      this.attackMode = originalAttackMode
+      this.attackConfig = this.loadAttackConfig(originalAttackMode)
+
+      // Return the results
+      return results
+    } catch (error) {
+      this.logger(`Error running multiple attack modes: ${error.message}`, this.uniqueTimestamp, null, true)
+
+      // Restore the original attack mode even if there's an error
+      this.attackMode = originalAttackMode
+      this.attackConfig = this.loadAttackConfig(originalAttackMode)
+
+      throw error
     }
   }
 

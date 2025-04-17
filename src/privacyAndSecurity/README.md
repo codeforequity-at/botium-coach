@@ -489,6 +489,7 @@ const AttackTranscriptAnalyzer = require('./attackTranscriptAnalyzer.js');
 const fs = require('fs');
 const path = require('path');
 
+// Example 1: Running a single attack mode
 // Load attack configuration
 const configPath = path.join(__dirname, 'attackModes', 'prompt-injection.json');
 const attackConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -521,7 +522,71 @@ if (analysisReport.violations.length > 0) {
     console.log(`- Turn ${violation.turn}: ${violation.userMessage}`);
   });
 }
+
+// Example 2: Running multiple attack modes in parallel
+// Initialize with parameters including multiple attack modes
+const multiAgent = new AttackerAgent({
+  driver: botiumDriver,
+  llm: llmManager,
+  allowedDomains: ['banking'],
+  attackModes: ['prompt-injection', 'jailbreak', 'role-confusion']
+}, loggerFunction);
+
+// Execute all attack modes in parallel against a target chatbot
+const resultsArray = await multiAgent.runMultiple(targetChatbot);
+
+// Process each result
+for (const result of resultsArray) {
+  console.log(`Attack mode: ${result.attackMode}`);
+  console.log(`Success: ${result.success}`);
+  console.log(`Total turns: ${result.turns}`);
+  
+  // Load the corresponding attack configuration
+  const attackConfigPath = path.join(__dirname, 'attackModes', `${result.attackMode}.json`);
+  const attackConfig = JSON.parse(fs.readFileSync(attackConfigPath, 'utf8'));
+  
+  // Analyze the transcript
+  const analyzer = new AttackTranscriptAnalyzer(result.transcript, attackConfig, llmManager);
+  const analysisReport = await analyzer.generate();
+  
+  // Process analysis report
+  console.log(`Attack success rate: ${analysisReport.successRate * 100}%`);
+}
 ```
+
+## Parallel Execution of Attack Modes
+
+The AttackerAgent supports running multiple attack modes in parallel, which can significantly improve performance when testing against multiple attack vectors. This is done through the `runMultiple` method:
+
+### Benefits of Parallel Execution
+
+- **Improved Performance**: All attack modes run simultaneously, reducing total execution time
+- **Consistent Testing Environment**: All attacks are run against the same version of the target system
+- **Consolidated Results**: All results are returned in a single array for easier processing
+
+### How to Use Parallel Execution
+
+1. **Initialize with Multiple Attack Modes**:
+   ```javascript
+   const agent = new AttackerAgent({
+     // ...other parameters
+     attackModes: ['prompt-injection', 'jailbreak', 'data-exfiltration']
+   }, loggerFunction);
+   ```
+
+2. **Execute in Parallel**:
+   ```javascript
+   const resultsArray = await agent.runMultiple(targetChatbot);
+   ```
+
+3. **Process Results**:
+   ```javascript
+   resultsArray.forEach(result => {
+     console.log(`Attack mode ${result.attackMode}: ${result.success ? 'Succeeded' : 'Failed'}`);
+   });
+   ```
+
+Each result in the array contains the complete output from running a single attack mode, including transcript, token usage, and other metadata. The results can then be individually processed by the AttackTranscriptAnalyzer as demonstrated in the usage example.
 
 ## Limitations and Considerations
 
