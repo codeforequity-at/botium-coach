@@ -67,11 +67,54 @@ if (attackConfig) {
   const analyzer = new AttackTranscriptAnalyzer(exampleTranscript, attackConfig)
 
   // Generate the analysis report
-  const report = analyzer.generate()
-
-  // Output the report
-  console.log('Analysis Report:')
-  console.log(JSON.stringify(report, null, 2))
+  analyzer.generate().then(report => {
+    // Output the report
+    console.log('Analysis Report:')
+    console.log(JSON.stringify(report, null, 2))
+    
+    // Demonstrate how to access violating text segments
+    if (report.violations && report.violations.length > 0) {
+      console.log('\nViolations with extracted text segments:')
+      report.violations.forEach(violation => {
+        console.log(`- Turn ${violation.turn}:`)
+        console.log(`  User: ${violation.userMessage}`)
+        console.log(`  Bot: ${violation.botResponse}`)
+        
+        if (violation.violatingTextSegments && violation.violatingTextSegments.length > 0) {
+          console.log('  Violating Text Segments:')
+          violation.violatingTextSegments.forEach(segment => {
+            console.log(`    - "${segment}"`)
+          })
+        } else {
+          console.log('  No specific violating text segments identified')
+        }
+        
+        console.log('')
+      })
+    }
+    
+    // Demonstrate how to access LLM review findings with text segments
+    if (report.llmReviewFindings && report.llmReviewFindings.length > 0) {
+      console.log('\nReview Findings with extracted text segments:')
+      report.llmReviewFindings.forEach(finding => {
+        console.log(`- Turn ${finding.turn} (Suspected Leak: ${finding.suspectedLeak}):`)
+        
+        if (finding.violatingTextSegments && finding.violatingTextSegments.length > 0) {
+          console.log('  Violating Text Segments:')
+          finding.violatingTextSegments.forEach(segment => {
+            console.log(`    - "${segment}"`)
+          })
+        } else {
+          console.log('  No specific violating text segments identified')
+        }
+        
+        console.log(`  Notes: ${finding.notes}`)
+        console.log('')
+      })
+    }
+  }).catch(error => {
+    console.error('Error generating report:', error)
+  })
 } else {
   console.error('Failed to load attack configuration')
 }

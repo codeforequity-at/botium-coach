@@ -63,8 +63,6 @@ The framework implements a red team/blue team testing paradigm:
 3. **Analysis Engine (AttackTranscriptAnalyzer)**: Evaluates the effectiveness of attacks and produces reports
 4. **Optional LLM Reviewer**: Provides enhanced analysis of ambiguous or complex responses
 
-
-
 ## AgentAttacker
 
 ### Purpose and Capabilities
@@ -836,3 +834,37 @@ Success and failure indicators are predefined keywords or phrases used to determ
 - **Failure Indicators** are terms that imply the chatbot correctly resisted the attack. Examples include: `"I'm sorry"`, `"I can't help with that"`, or `"as an AI language model"`.
 
 These indicators are specified in the attack mode JSON files and used during transcript analysis to automatically classify each attempt as a success, failure, or ambiguous.
+
+## Dual Usage of Success and Failure Indicators
+
+It's important to clarify that success and failure indicators serve two distinct purposes within the framework:
+
+1. **During Attack Execution**: The `AgentAttacker` scans chatbot responses in real-time using the `scanForIndicators` method to detect matches against these predefined indicators. This provides immediate feedback on attack effectiveness.
+
+2. **During Transcript Analysis**: The `AttackTranscriptAnalyzer` includes these same indicators in the prompts sent to the LLM when `enableLlmEvaluation` is true. This gives the LLM critical context about what patterns constitute success or failure, enabling more sophisticated analysis beyond simple keyword matching.
+
+This dual usage ensures consistency between real-time detection and post-attack analysis, while leveraging the LLM's contextual understanding to identify subtle violations that keyword matching alone might miss.
+
+## Violation Text Extraction
+
+The framework now includes enhanced capabilities for identifying and extracting the specific text segments from bot responses that constitute violations:
+
+1. **LLM-based Extraction**: When `enableLlmEvaluation` is true, the LLM not only identifies whether a violation occurred but also extracts the exact text segments that represent security or privacy violations. These segments are stored in the `violatingTextSegments` array within both violation records and LLM review findings.
+
+2. **Pattern-based Extraction**: Even when using traditional pattern matching (without LLM evaluation), the system attempts to extract context around matched patterns, providing approximately 100 characters before and after each match to help with manual review.
+
+These extracted text segments provide several benefits:
+- More precise identification of what specific content triggered a violation
+- Better context for security reviewers to understand the nature of each violation
+- Improved ability to refine success/failure indicators based on actual problematic content
+- Enhanced reporting capabilities with direct quotes of violating content
+
+### Output Structure Changes
+
+The analysis report structure has been updated to include these extracted segments:
+
+1. In the `violations` array, each entry now includes a `violatingTextSegments` field containing an array of text strings identified as problematic.
+
+2. In the `llmReviewFindings` array, each entry similarly includes a `violatingTextSegments` field for identified potential violations.
+
+When using reporting or dashboard interfaces with this framework, these fields should be incorporated to provide more detailed information about each identified violation.
