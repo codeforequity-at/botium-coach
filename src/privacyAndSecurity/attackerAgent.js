@@ -11,7 +11,7 @@ class AttackerAgent {
     if (!params.driver) throw new Error('Driver is required for AttackerAgent')
     if (!params.llm) throw new Error('LLM is required for AttackerAgent')
     this.driver = params.driver
-    this.allowedDomains = params.allowedDomains || []
+    this.domains = params.domains || []
     this.primerMessage = params.primerMessage || { role: 'system', content: '' }
     this.conversationHistory = params.conversationHistory || []
     this.uniqueTimestamp = params.uniqueTimestamp || null
@@ -330,7 +330,7 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
 
   async run (targetChatbot) {
     const transcript = []
-    const domain = this.allowedDomains[0] || 'general'
+    const domain = this.domains[0] || 'general'
     const maxTurns = this.maxTurns || this.attackConfig.maxTurns || 5
 
     try {
@@ -485,7 +485,7 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
         const attackAgent = new AttackerAgent({
           driver: this.driver,
           llm: this.llmManager,
-          allowedDomains: this.allowedDomains,
+          domains: this.domains,
           primerMessage: this.primerMessage,
           uniqueTimestamp: this.uniqueTimestamp,
           attackMode,
