@@ -24,14 +24,11 @@ class AttackerAgent {
     this.commonInstance = new Common(this.logger)
     this.llmManager = params.llm
     this.attackConfig = this.loadAttackConfig(this.attackMode)
-    this.logger(`AttackerAgent initialized with attack mode: ${this.attackMode}`, this.uniqueTimestamp, null, true)
-    // this.logger(`Attack config loaded: ${JSON.stringify(this.attackConfig, null, 2)}`, this.uniqueTimestamp, null, true)
   }
 
   loadAttackConfig (attackMode) {
     try {
       const configPath = path.join(__dirname, 'attackModes', `${attackMode}.json`)
-      this.logger(`Loading attack config from: ${configPath}`, this.uniqueTimestamp, null, true)
 
       if (!fs.existsSync(configPath)) {
         throw new Error(`Attack mode configuration file not found: ${configPath}`)
@@ -277,10 +274,6 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
     const systemPrompt = this.createRedTeamSystemPrompt(domain)
     const userPrompt = this.createRedTeamUserPrompt(domain, this.attackConfig.trainingExamples)
 
-    this.logger(`Generating domain-specific attack for: ${domain}`, this.uniqueTimestamp, null, true)
-    this.logger(`\nUsing system prompt: ${systemPrompt.content} \n\n`, this.uniqueTimestamp, null, true)
-    this.logger(`Using user prompt with ${this.attackConfig.trainingExamples.length} examples`, this.uniqueTimestamp, null, true)
-
     try {
       const messages = [systemPrompt, userPrompt]
       const { result, usage } = await this.llmManager.sendRequest(messages)
@@ -288,7 +281,6 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
       this.promptTokensUsed += usage?.promptTokens || 0
       this.completionTokensUsed += usage?.completionTokens || 0
 
-      this.logger(`Generated attack prompt: ${result}`, this.uniqueTimestamp, null, true)
       return result
     } catch (error) {
       this.logger(`Error generating domain-specific attack: ${error.message}`, this.uniqueTimestamp, null, true)
@@ -322,9 +314,6 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
     const domain = this.allowedDomains[0] || 'general'
     const maxTurns = this.maxTurns || this.attackConfig.maxTurns || 5
 
-    this.logger(`Beginning attack run against target chatbot in domain: ${domain}`, this.uniqueTimestamp, null, true)
-    this.logger(`Max conversation turns: ${maxTurns}`, this.uniqueTimestamp, null, true)
-
     try {
       let container = null
       try {
@@ -333,8 +322,6 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
 
         // Generate an attack prompt based on the domain
         const attackPrompt = await this.generateDomainSpecificAttack(domain)
-
-        console.log('attackPrompt', attackPrompt)
 
         // Initialize conversation
         container.UserSays({ messageText: attackPrompt })
@@ -404,9 +391,6 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
           }
 
           transcript.push(entry)
-
-          // Log progress
-          this.logger(`Turn ${turn}/${maxTurns}:`, this.uniqueTimestamp, null, true)
         }
 
         // Clean up
@@ -432,14 +416,6 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
         totalTokensUsed: this.promptTokensUsed + this.completionTokensUsed,
         requiresLlmReview: this.attackConfig.requiresLlmReview
       }
-
-      // Log the analysis result
-      this.logger('Attack run completed. Analysis:', this.uniqueTimestamp, null, true)
-      this.logger(`Success: ${analysisResult.success}`, this.uniqueTimestamp, null, true)
-      this.logger(`Total turns: ${analysisResult.turns}`, this.uniqueTimestamp, null, true)
-      this.logger(`Total success indicators: ${analysisResult.summarySuccess}`, this.uniqueTimestamp, null, true)
-      this.logger(`Total failure indicators: ${analysisResult.summaryFailure}`, this.uniqueTimestamp, null, true)
-      this.logger(`Token usage - Prompt: ${analysisResult.promptTokensUsed}, Completion: ${analysisResult.completionTokensUsed}, Total: ${analysisResult.totalTokensUsed}`, this.uniqueTimestamp, null, true)
 
       // Format the result to match the expected structure for the TranscriptAnalyser
       // This is a compatibility layer for the existing infrastructure
@@ -478,7 +454,7 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
 
   // New method to run multiple attack modes in parallel
   async runMultiple (targetChatbot) {
-    this.logger(`Beginning parallel execution of ${this.attackModes.length} attack modes`, this.uniqueTimestamp, null, true)
+    this.logger(`Beginning parallel execution of ${this.attackModes.length} attack modes`, this.uniqueTimestamp, null, false)
 
     // Store the original attack mode to restore it after all runs
     const originalAttackMode = this.attackMode
