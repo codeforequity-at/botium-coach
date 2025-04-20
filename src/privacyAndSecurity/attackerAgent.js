@@ -19,7 +19,26 @@ class AttackerAgent {
     this.completionTokensUsed = params.completionTokensUsed || 0
     this.attackMode = params.attackMode || 'prompt-injection'
     this.attackModes = params.attackModes || [this.attackMode] // Support multiple attack modes
-    this.maxTurns = params.maxTurns || null
+
+    // Handle attack intensity (low, medium, high) instead of direct maxTurns
+    if (params.attackIntensity) {
+      switch (params.attackIntensity.toLowerCase()) {
+        case 'low':
+          this.maxTurns = 3
+          break
+        case 'medium':
+          this.maxTurns = 6
+          break
+        case 'high':
+          this.maxTurns = 9
+          break
+        default:
+          this.maxTurns = null
+      }
+    } else {
+      this.maxTurns = params.maxTurns || null
+    }
+
     this.logger = logger
     this.commonInstance = new Common(this.logger)
     this.llmManager = params.llm
@@ -470,7 +489,12 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
           primerMessage: this.primerMessage,
           uniqueTimestamp: this.uniqueTimestamp,
           attackMode,
-          maxTurns: this.maxTurns,
+          // Pass attackIntensity instead of maxTurns
+          attackIntensity: this.maxTurns === 3
+            ? 'low'
+            : this.maxTurns === 6
+              ? 'medium'
+              : this.maxTurns === 9 ? 'high' : null,
           // Create empty conversation history for each attack mode
           conversationHistory: []
         }, this.logger)
