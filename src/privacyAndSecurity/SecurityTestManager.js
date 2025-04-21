@@ -85,7 +85,19 @@ class SecurityTestManager {
 
     // Calculate overall success rate
     const totalAttackTurns = summary.successfulAttacks + summary.failedAttacks + summary.ambiguousAttacks
-    summary.successRate = totalAttackTurns > 0 ? (summary.successfulAttacks / totalAttackTurns) * 100 : 0
+
+    // Fix: Calculate success rate correctly
+    // The issue was that the success rate was either miscalculated or
+    // the calculation was not correctly handling the ratios
+    if (totalAttackTurns > 0) {
+      // Ensure we're getting a proper percentage (0-100%)
+      summary.successRate = Math.min(100, (summary.successfulAttacks / totalAttackTurns) * 100)
+    } else {
+      summary.successRate = 0
+    }
+
+    // Format to at most 1 decimal place to avoid weird numbers
+    summary.successRate = parseFloat(summary.successRate.toFixed(1))
 
     // Include metrics indicating whether any attacks were successful
     summary.anySuccessfulAttacks = summary.successfulAttacks > 0
@@ -97,121 +109,149 @@ class SecurityTestManager {
     return summary
   }
 
-  async runTests () {
+  /**
+   * Helper method to analyze a single attack result in parallel
+   * @param {Object} result - The attack result to analyze
+   * @returns {Promise<Object>} - The analyzed result with attached analysis report
+   */
+  async analyzeAttackResult (result) {
+    const selectedAttackMode = result.attackMode
+
+    // Save transcript to file with attack mode in filename (can be done async)
+    if (result.transcript) {
+      this.logToFile(JSON.stringify(result.transcript, null, 2),
+        this.params.uniqueTimestamp,
+        `Transcript_${selectedAttackMode}.txt`)
+
+      this.logToFile('\n\n FOR DEBUGGING PURPOSES',
+        this.params.uniqueTimestamp,
+        `Transcript_${selectedAttackMode}.txt`)
+
+      this.logToFile(
+        `const conversationArray = ${JSON.stringify(result.transcript)
+          .replace(/\r?\n|\r/g, '\\n') // Remove line breaks within content
+          .replace(/\\+/g, '\\\\')};`, // Escape all backslashes correctly
+        this.params.uniqueTimestamp,
+        `Transcript_${selectedAttackMode}.txt`
+      )
+    }
+
+    // Load attack configuration
+    let attackConfig = null
     try {
-      // Run all attack modes in parallel using AttackerAgent
-      const results = await this.attackerAgent.runMultiple(this.params.driver)
+      const attackConfigPath = path.join(__dirname, 'attackModes', `${selectedAttackMode}.json`)
+      const configData = fs.readFileSync(attackConfigPath, 'utf8')
+      attackConfig = JSON.parse(configData)
 
-      // Process each result and perform analysis
-      for (let i = 0; i < results.length; i++) {
-        const result = results[i]
-        const selectedAttackMode = result.attackMode
+      // Force LLM evaluation to always be true
+      if (attackConfig) {
+        attackConfig.enableLlmEvaluation = true
+      }
+    } catch (error) {
+      console.error(`Error loading attack configuration: ${error.message}`)
+      this.logToFile(`Error loading attack configuration: ${error.message}`,
+        this.params.uniqueTimestamp, null, true)
+      return result
+    }
 
-        // Save transcript to file with attack mode in filename
-        if (result.transcript) {
-          this.logToFile(JSON.stringify(result.transcript, null, 2),
-            this.params.uniqueTimestamp,
-                        `Transcript_${selectedAttackMode}.txt`)
+    // Analyze the transcript using AttackTranscriptAnalyzer
+    if (attackConfig && result.transcript) {
+      this.logToFile(`Analyzing attack transcript for ${selectedAttackMode} with LLM-based analysis...`,
+        this.params.uniqueTimestamp, null, true)
 
-          this.logToFile('\n\n FOR DEBUGGING PURPOSES',
-            this.params.uniqueTimestamp,
-                        `Transcript_${selectedAttackMode}.txt`)
-
-          this.logToFile(
-                        `const conversationArray = ${JSON.stringify(result.transcript)
-                            .replace(/\r?\n|\r/g, '\\n') // Remove line breaks within content
-                            .replace(/\\+/g, '\\\\')};`, // Escape all backslashes correctly
-                        this.params.uniqueTimestamp,
-                        `Transcript_${selectedAttackMode}.txt`
-          )
-        }
-
-        // Load attack configuration
-        const attackConfigPath = path.join(__dirname, 'attackModes', `${selectedAttackMode}.json`)
-        let attackConfig = null
-
-        try {
-          const configData = fs.readFileSync(attackConfigPath, 'utf8')
-          attackConfig = JSON.parse(configData)
-
-          // Force LLM evaluation to always be true
-          if (attackConfig) {
-            attackConfig.enableLlmEvaluation = true
-          }
-        } catch (error) {
-          console.error(`Error loading attack configuration: ${error.message}`)
-          this.logToFile(`Error loading attack configuration: ${error.message}`,
-            this.params.uniqueTimestamp, null, true)
-        }
-
-        // Analyze the transcript using AttackTranscriptAnalyzer
-        if (attackConfig && result.transcript) {
-          this.logToFile('Analyzing attack transcript with LLM-based analysis...',
-            this.params.uniqueTimestamp, null, true)
-
-          // Add domain to attackConfig if not there
-          if (result.domain && (!attackConfig.domain || attackConfig.domain === 'unknown')) {
-            attackConfig.domain = result.domain
-          }
-
-          // Ensure LLM manager is provided for intelligent analysis
-          if (!this.params.llm) {
-            this.logToFile('LLM manager is required for intelligent analysis but was not provided',
-              this.params.uniqueTimestamp, null, true)
-            continue
-          }
-
-          const analyzer = new AttackTranscriptAnalyzer(
-            result.transcript,
-            attackConfig,
-            this.params.llm // Pass LLM manager for intelligent analysis
-          )
-
-          try {
-            // Generate the analysis report
-            const analysisReport = await analyzer.generate()
-
-            // Save analysis report to file
-            this.logToFile(JSON.stringify(analysisReport, null, 2),
-              this.params.uniqueTimestamp,
-                            `AnalysisReport_${selectedAttackMode}.txt`)
-
-            // Store analysis report in results for later access
-            result.analysisReport = analysisReport
-
-            // Set the success flag on the result based on violations found
-            if (analysisReport.violations && analysisReport.violations.length > 0) {
-              result.success = true
-            }
-
-            // Generate HTML report if the function is provided
-            if (this.params.generateHTMLReport) {
-              this.logToFile('Generating HTML report...',
-                this.params.uniqueTimestamp, null, true)
-
-              const reportPath = this.params.generateHTMLReport(
-                result,
-                analysisReport,
-                this.params.uniqueTimestamp,
-                                `${selectedAttackMode}_report`
-              )
-
-              if (reportPath) {
-                this.reportPaths.push(reportPath)
-              }
-            }
-          } catch (error) {
-            console.error('Error analyzing attack transcript:', error)
-            this.logToFile(`Error analyzing attack transcript: ${error.message}`,
-              this.params.uniqueTimestamp, null, true)
-          }
-        }
-
-        // Add to final results
-        this.results.push(result)
+      // Add domain to attackConfig if not there
+      if (result.domain && (!attackConfig.domain || attackConfig.domain === 'unknown')) {
+        attackConfig.domain = result.domain
       }
 
-      // Generate our own metrics summary first
+      // Ensure LLM manager is provided for intelligent analysis
+      if (!this.params.llm) {
+        this.logToFile('LLM manager is required for intelligent analysis but was not provided',
+          this.params.uniqueTimestamp, null, true)
+        return result
+      }
+
+      const analyzer = new AttackTranscriptAnalyzer(
+        result.transcript,
+        attackConfig,
+        this.params.llm // Pass LLM manager for intelligent analysis
+      )
+
+      try {
+        // Generate the analysis report
+        const analysisReport = await analyzer.generate()
+
+        // Save analysis report to file
+        this.logToFile(JSON.stringify(analysisReport, null, 2),
+          this.params.uniqueTimestamp,
+          `AnalysisReport_${selectedAttackMode}.txt`)
+
+        // Store analysis report in results for later access
+        result.analysisReport = analysisReport
+
+        // Set the success flag on the result based on violations found
+        if (analysisReport.violations && analysisReport.violations.length > 0) {
+          result.success = true
+        }
+
+        // Generate HTML report if the function is provided
+        if (this.params.generateHTMLReport) {
+          this.logToFile(`Generating HTML report for ${selectedAttackMode}...`,
+            this.params.uniqueTimestamp, null, true)
+
+          const reportPath = this.params.generateHTMLReport(
+            result,
+            analysisReport,
+            this.params.uniqueTimestamp,
+            `${selectedAttackMode}_report`
+          )
+
+          if (reportPath) {
+            return { result, reportPath }
+          }
+        }
+      } catch (error) {
+        console.error(`Error analyzing attack transcript for ${selectedAttackMode}:`, error)
+        this.logToFile(`Error analyzing attack transcript for ${selectedAttackMode}: ${error.message}`,
+          this.params.uniqueTimestamp, null, true)
+      }
+    }
+
+    return { result, reportPath: null }
+  }
+
+  async runTests () {
+    try {
+      this.logToFile('Starting parallel security testing and analysis...',
+        this.params.uniqueTimestamp, null, true)
+
+      // Run all attack modes in parallel using AttackerAgent
+      const attackResults = await this.attackerAgent.runMultiple(this.params.driver)
+
+      this.logToFile(`Completed ${attackResults.length} attack runs, starting parallel analysis...`,
+        this.params.uniqueTimestamp, null, true)
+
+      // Process each attack result in parallel - create an array of promises
+      const analysisPromises = attackResults.map(result => this.analyzeAttackResult(result))
+
+      // Wait for all analyses to complete in parallel
+      const analysisResults = await Promise.all(analysisPromises)
+
+      // Process results and collect reportPaths
+      this.results = []
+      this.reportPaths = []
+
+      analysisResults.forEach(({ result, reportPath }) => {
+        if (result) {
+          this.results.push(result)
+        }
+
+        if (reportPath) {
+          this.reportPaths.push(reportPath)
+        }
+      })
+
+      // Generate our own metrics summary
       const summaryMetrics = this.aggregateMetrics(this.results)
 
       // Set the overall success flag based on the aggregated metrics
