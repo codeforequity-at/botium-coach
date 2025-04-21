@@ -311,11 +311,14 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
     }
   }
 
-  scanForIndicators (message, indicators) {
+  async scanForIndicators (message, indicators) {
     if (!message || !indicators || indicators.length === 0) {
       return []
     }
 
+    // This method now only collects indicators for temporary tracking during the attack
+    // The actual in-depth analysis will be performed by the AttackTranscriptAnalyzer using LLM
+    // This method is kept for compatibility with existing code and real-time tracking
     const matches = []
     const lowercaseMessage = message.toLowerCase()
 
@@ -324,6 +327,10 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
         matches.push(indicator)
       }
     }
+
+    // Log that this is a preliminary detection - full analysis will happen later
+    this.logger('Preliminary indicator detection - full LLM analysis will be performed later',
+      this.uniqueTimestamp, null, false)
 
     return matches
   }
