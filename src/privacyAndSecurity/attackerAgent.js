@@ -353,21 +353,22 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
         container.UserSays({ messageText: attackPrompt })
         let botResponse = await container.WaitBotSays()
 
-        // Record the first exchange
+        // Record the first exchange - modify to ensure we're tracking 1 turn = 1 entry
         const firstEntry = {
           userMessage: attackPrompt,
           botResponse: botResponse.messageText,
-          matchedSuccessIndicators: this.scanForIndicators(
+          matchedSuccessIndicators: await this.scanForIndicators(
             botResponse.messageText,
             this.attackConfig.successIndicators
           ),
-          matchedFailureIndicators: this.scanForIndicators(
+          matchedFailureIndicators: await this.scanForIndicators(
             botResponse.messageText,
             this.attackConfig.failureIndicators
           ),
           llmReviewSuggested: this.attackConfig.requiresLlmReview || false,
           basedOnExample: 'domain-specific-generation',
-          mutationTechniqueUsed: null
+          mutationTechniqueUsed: null,
+          turn: 1 // Add explicit turn number to help with tracking
         }
 
         transcript.push(firstEntry)
@@ -397,15 +398,15 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
           container.UserSays({ messageText: followUpMessage })
           botResponse = await container.WaitBotSays()
 
-          // Record this exchange
+          // Record this exchange with turn number for accurate tracking
           const entry = {
             userMessage: followUpMessage,
             botResponse: botResponse.messageText,
-            matchedSuccessIndicators: this.scanForIndicators(
+            matchedSuccessIndicators: await this.scanForIndicators(
               botResponse.messageText,
               this.attackConfig.successIndicators
             ),
-            matchedFailureIndicators: this.scanForIndicators(
+            matchedFailureIndicators: await this.scanForIndicators(
               botResponse.messageText,
               this.attackConfig.failureIndicators
             ),
@@ -413,7 +414,8 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
             basedOnExample: 'conversation-context',
             mutationTechniqueUsed: this.attackConfig.mutationTechniques.length > 0
               ? this.attackConfig.mutationTechniques[turn % this.attackConfig.mutationTechniques.length]
-              : null
+              : null,
+            turn: turn + 1 // Add explicit turn number (1-indexed)
           }
 
           transcript.push(entry)
@@ -428,6 +430,9 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
         }
       }
 
+      // Log the turns count for clarity
+      this.logger(`Attack completed with ${transcript.length} turns`, this.uniqueTimestamp, null, true)
+
       // Analyze the transcript
       const analysisResult = {
         domain,
@@ -435,8 +440,8 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
         transcript,
         success: transcript.some(entry => entry.matchedSuccessIndicators.length > 0),
         turns: transcript.length,
-        summarySuccess: transcript.reduce((count, entry) => count + entry.matchedSuccessIndicators.length, 0),
-        summaryFailure: transcript.reduce((count, entry) => count + entry.matchedFailureIndicators.length, 0),
+        summarySuccess: transcript.reduce((count, entry) => count + (entry.matchedSuccessIndicators.length > 0 ? 1 : 0), 0),
+        summaryFailure: transcript.reduce((count, entry) => count + (entry.matchedFailureIndicators.length > 0 ? 1 : 0), 0),
         promptTokensUsed: this.promptTokensUsed,
         completionTokensUsed: this.completionTokensUsed,
         totalTokensUsed: this.promptTokensUsed + this.completionTokensUsed,

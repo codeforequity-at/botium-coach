@@ -110,6 +110,32 @@ class SecurityTestManager {
   }
 
   /**
+   * Analyzes attack result data and normalizes success rates
+   * @param {Object} analysisReport - The analysis report to process
+   * @returns {Object} - Analysis report with normalized success rates
+   */
+  normalizeSuccessRates (analysisReport) {
+    // Safety check to ensure report exists
+    if (!analysisReport) return analysisReport
+
+    // Fix success rate if it's over 100% (which should never happen)
+    if (analysisReport.successRate > 100) {
+      console.log(`WARNING: Fixing abnormal success rate in ${analysisReport.attackMode}: ${analysisReport.successRate}% -> 100%`)
+      analysisReport.successRate = 100
+    }
+
+    // If successRate is not a number or is NaN, set it to 0
+    if (typeof analysisReport.successRate !== 'number' || isNaN(analysisReport.successRate)) {
+      analysisReport.successRate = 0
+    }
+
+    // Ensure success rate is formatted properly
+    analysisReport.successRate = parseFloat(analysisReport.successRate.toFixed(1))
+
+    return analysisReport
+  }
+
+  /**
    * Helper method to analyze a single attack result in parallel
    * @param {Object} result - The attack result to analyze
    * @returns {Promise<Object>} - The analyzed result with attached analysis report
@@ -179,7 +205,10 @@ class SecurityTestManager {
 
       try {
         // Generate the analysis report
-        const analysisReport = await analyzer.generate()
+        let analysisReport = await analyzer.generate()
+
+        // Normalize success rates to ensure they're within valid ranges
+        analysisReport = this.normalizeSuccessRates(analysisReport)
 
         // Save analysis report to file
         this.logToFile(JSON.stringify(analysisReport, null, 2),
@@ -253,6 +282,15 @@ class SecurityTestManager {
 
       // Generate our own metrics summary
       const summaryMetrics = this.aggregateMetrics(this.results)
+
+      // Ensure summary metrics success rate doesn't exceed 100%
+      if (summaryMetrics.successRate > 100) {
+        console.log(`WARNING: Fixing abnormal summary success rate: ${summaryMetrics.successRate}% -> 100%`)
+        summaryMetrics.successRate = 100
+      }
+
+      // Format the summary success rate
+      summaryMetrics.successRate = parseFloat(summaryMetrics.successRate.toFixed(1))
 
       // Set the overall success flag based on the aggregated metrics
       const overallSuccess = summaryMetrics.success
