@@ -430,9 +430,6 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
         }
       }
 
-      // Log the turns count for clarity
-      this.logger(`Attack completed with ${transcript.length} turns`, this.uniqueTimestamp, null, true)
-
       // Analyze the transcript
       const analysisResult = {
         domain,

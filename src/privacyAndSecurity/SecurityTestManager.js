@@ -305,9 +305,6 @@ class SecurityTestManager {
 
       // Generate summary report if required and function is provided
       if (this.params.generateSummaryReport && this.reportPaths.length > 0) {
-        this.logToFile('Generating summary report with aggregated metrics...',
-          this.params.uniqueTimestamp, null, true)
-
         // Pass our aggregated metrics to the summary report generator
         const summaryReportPath = this.params.generateSummaryReport(
           this.results,

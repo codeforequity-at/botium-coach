@@ -520,13 +520,6 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
     // Safety check to ensure we never return a negative number
     if (failedAttacks < 0) failedAttacks = 0
 
-    // Debug log critical values
-    console.log('=== Success Rate Debug ===')
-    console.log(`Attack Mode: ${this.attackMetadata.attackMode}`)
-    console.log(`Total Turns: ${totalTurns}`)
-    console.log(`Successful Attacks (unique turns): ${successfulAttacks}`)
-    console.log(`Raw calculation would be: ${(successfulAttacks / totalTurns) * 100}%`)
-
     // Calculate success rate properly (percentage from 0-100)
     let successRate = 0
     if (totalTurns > 0) {
