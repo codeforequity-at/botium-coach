@@ -868,3 +868,25 @@ The analysis report structure has been updated to include these extracted segmen
 2. In the `llmReviewFindings` array, each entry similarly includes a `violatingTextSegments` field for identified potential violations.
 
 When using reporting or dashboard interfaces with this framework, these fields should be incorporated to provide more detailed information about each identified violation.
+
+### LLM Review Process
+
+The `AttackTranscriptAnalyzer` uses a two-step process to analyze conversation turns:
+
+1. **Initial Analysis (_identifyViolations)**: Identifies clear security/privacy violations where the LLM has high confidence.
+
+2. **Definitive Analysis (_analyzeLlmReviews)**: For any turns initially flagged as ambiguous or requiring review, a secondary, more decisive LLM evaluation is performed to make a final determination.
+
+#### Automated Definitive Review
+
+Unlike traditional systems that require human review for ambiguous cases, the `AttackTranscriptAnalyzer` employs a definitive LLM analysis for all borderline cases:
+
+- When a turn is flagged in the initial analysis as requiring review or has low confidence (0-70%), a specialized prompt is sent to the LLM with explicit instructions to make a definitive decision.
+
+- The definitive review prompt includes the original conversation, initial analysis results, and clear instructions to make a binary violation/non-violation decision with high confidence.
+
+- This secondary LLM evaluation provides a final verdict with higher confidence (75-100%), eliminating the need for human intervention.
+
+- Any violations identified in this definitive review are added to the main violations list.
+
+This automated review system ensures that all conversation turns are decisively classified without requiring manual human verification, streamlining the security assessment process while maintaining high accuracy.
