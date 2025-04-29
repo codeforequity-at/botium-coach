@@ -60,8 +60,7 @@ class AttackerAgent {
 
       // Validate required fields
       const requiredFields = [
-        'attackMode', 'description', 'instructions', 'strategy',
-        'maxTurns', 'successIndicators', 'failureIndicators'
+        'attackMode', 'description', 'instructions', 'strategy', 'successIndicators', 'failureIndicators'
       ]
 
       for (const field of requiredFields) {
