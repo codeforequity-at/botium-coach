@@ -17,8 +17,7 @@ class AttackerAgent {
     this.uniqueTimestamp = params.uniqueTimestamp || null
     this.promptTokensUsed = params.promptTokensUsed || 0
     this.completionTokensUsed = params.completionTokensUsed || 0
-    this.attackMode = params.attackMode || 'prompt-injection'
-    this.attackModes = params.attackModes || [this.attackMode] // Support multiple attack modes
+    this.attackModes = params.attackModes || (params.attackMode ? [params.attackMode] : ['prompt-injection'])
 
     // Handle attack intensity (low, medium, high) instead of direct maxTurns
     if (params.attackIntensity) {
@@ -42,13 +41,16 @@ class AttackerAgent {
     this.logger = logger
     this.commonInstance = new Common(this.logger)
     this.llmManager = params.llm
-    this.attackConfig = this.loadAttackConfig(this.attackMode)
+    this.attackConfig = this.loadAttackConfig(this.getPrimaryAttackMode())
+  }
+
+  getPrimaryAttackMode () {
+    return this.attackModes[0]
   }
 
   loadAttackConfig (attackMode) {
     try {
       const configPath = path.join(__dirname, 'attackModes', `${attackMode}.json`)
-
       if (!fs.existsSync(configPath)) {
         throw new Error(`Attack mode configuration file not found: ${configPath}`)
       }
@@ -58,8 +60,7 @@ class AttackerAgent {
 
       // Validate required fields
       const requiredFields = [
-        'attackMode', 'description', 'instructions', 'strategy',
-        'maxTurns', 'successIndicators', 'failureIndicators'
+        'attackMode', 'description', 'instructions', 'strategy', 'successIndicators', 'failureIndicators'
       ]
 
       for (const field of requiredFields) {
@@ -484,8 +485,8 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
   async runMultiple (targetChatbot) {
     this.logger(`Beginning parallel execution of ${this.attackModes.length} attack modes`, this.uniqueTimestamp, null, false)
 
-    // Store the original attack mode to restore it after all runs
-    const originalAttackMode = this.attackMode
+    // Store the original attack modes to restore them after all runs
+    const originalAttackModes = [...this.attackModes]
 
     try {
       // Create an array of promises for each attack mode
@@ -497,7 +498,7 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
           domains: this.domains,
           primerMessage: this.primerMessage,
           uniqueTimestamp: this.uniqueTimestamp,
-          attackMode,
+          attackModes: [attackMode],
           // Pass attackIntensity instead of maxTurns
           attackIntensity: this.maxTurns === 3
             ? 'low'
@@ -515,18 +516,18 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself without any explan
       // Wait for all attack runs to complete
       const results = await Promise.all(attackPromises)
 
-      // Restore the original attack mode
-      this.attackMode = originalAttackMode
-      this.attackConfig = this.loadAttackConfig(originalAttackMode)
+      // Restore the original attack modes
+      this.attackModes = originalAttackModes
+      this.attackConfig = this.loadAttackConfig(this.getPrimaryAttackMode())
 
       // Return the results
       return results
     } catch (error) {
       this.logger(`Error running multiple attack modes: ${error.message}`, this.uniqueTimestamp, null, true)
 
-      // Restore the original attack mode even if there's an error
-      this.attackMode = originalAttackMode
-      this.attackConfig = this.loadAttackConfig(originalAttackMode)
+      // Restore the original attack modes even if there's an error
+      this.attackModes = originalAttackModes
+      this.attackConfig = this.loadAttackConfig(this.getPrimaryAttackMode())
 
       throw error
     }

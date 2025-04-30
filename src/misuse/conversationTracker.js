@@ -361,7 +361,8 @@ class ConversationTracker {
 
       await this._stop(targetBotContainer)
     } catch (error) {
-      this.logger('\n\x1b[31mError in interactive conversation:\x1b[0m', error, localUniqueTimestamp, null, true)
+      console.log('Error in interactive conversation:', error)
+      this.logger('\n\x1b[31mError in interactive conversation:\x1b[0m', localUniqueTimestamp, null, true)
       await this._stop(targetBotContainer)
       return {
         error: true,
