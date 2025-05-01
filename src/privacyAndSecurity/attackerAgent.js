@@ -296,22 +296,18 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
   async replacePlaceholders (text) {
     const systemPrompt = {
       role: 'system',
-      content: `You are a text processing assistant. Your task is to replace any placeholders in the given text with appropriate fake entities.
-Replace any text in square brackets (like [NAME], [CITY], [COMPANY], etc.) with realistic fake names, places, organizations, or other entities.
-Make sure the replacements are contextually appropriate and maintain the same format as the original text.
-Do not add any explanations or additional text - just return the modified text with all placeholders replaced.`
+      content: `You are a text processing assistant. Your task is to replace any placeholders in the given text with appropriate fake entities.\nReplace any text in square brackets (like [NAME], [CITY], [COMPANY], etc.) with realistic fake names, places, organizations, or other entities.\nMake sure the replacements are contextually appropriate and maintain the same format as the original text.\nDo not add any explanations or additional text - just return the modified text with all placeholders replaced.`
     }
 
     const userPrompt = {
       role: 'user',
-      content: `Replace all placeholders in this text with appropriate fake entities:
-${text}`
+      content: `Replace all placeholders in this text with appropriate fake entities:\n${text}`
     }
 
     try {
-      const { result } = await this.llmManager.sendRequest([systemPrompt, userPrompt])
-
-      return result
+      // Treat the LLM response as plain text, do not parse as JSON
+      const { result } = await this.llmManager.sendRequest([systemPrompt, userPrompt]);
+      return result;
     } catch (error) {
       this.logger(`Error replacing placeholders: ${error.message}`, this.uniqueTimestamp, null, true)
       return text // Return original text if replacement fails
