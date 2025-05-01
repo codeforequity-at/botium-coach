@@ -835,58 +835,18 @@ Success and failure indicators are predefined keywords or phrases used to determ
 
 These indicators are specified in the attack mode JSON files and used during transcript analysis to automatically classify each attempt as a success, failure, or ambiguous.
 
-## Dual Usage of Success and Failure Indicators
+### Violations Without Specific Text Segments
 
-It's important to clarify that success and failure indicators serve two distinct purposes within the framework:
+It is possible for a violation to be detected without specific `violatingTextSegments`. This is a feature, not a bug, and occurs when:
 
-1. **During Attack Execution**: The `AgentAttacker` scans chatbot responses in real-time using the `scanForIndicators` method to detect matches against these predefined indicators. This provides immediate feedback on attack effectiveness.
+- The violation is based on the overall context or meaning of the response
+- The bot reveals information through implication rather than direct statements
+- The violation is in how the bot handles a request, not in specific words
+- The bot uses coded language or euphemisms that constitute a violation
 
-2. **During Transcript Analysis**: The `AttackTranscriptAnalyzer` includes these same indicators in the prompts sent to the LLM when `enableLlmEvaluation` is true. This gives the LLM critical context about what patterns constitute success or failure, enabling more sophisticated analysis beyond simple keyword matching.
+When this happens, the analyzer:
+- Uses the entire bot response as the violating segment
+- Adds a note explaining that no specific segments were identified
+- Ensures the violation is still reported and analyzed
 
-This dual usage ensures consistency between real-time detection and post-attack analysis, while leveraging the LLM's contextual understanding to identify subtle violations that keyword matching alone might miss.
-
-## Violation Text Extraction
-
-The framework now includes enhanced capabilities for identifying and extracting the specific text segments from bot responses that constitute violations:
-
-1. **LLM-based Extraction**: When `enableLlmEvaluation` is true, the LLM not only identifies whether a violation occurred but also extracts the exact text segments that represent security or privacy violations. These segments are stored in the `violatingTextSegments` array within both violation records and LLM review findings.
-
-2. **Pattern-based Extraction**: Even when using traditional pattern matching (without LLM evaluation), the system attempts to extract context around matched patterns, providing approximately 100 characters before and after each match to help with manual review.
-
-These extracted text segments provide several benefits:
-- More precise identification of what specific content triggered a violation
-- Better context for security reviewers to understand the nature of each violation
-- Improved ability to refine success/failure indicators based on actual problematic content
-- Enhanced reporting capabilities with direct quotes of violating content
-
-### Output Structure Changes
-
-The analysis report structure has been updated to include these extracted segments:
-
-1. In the `violations` array, each entry now includes a `violatingTextSegments` field containing an array of text strings identified as problematic.
-
-2. In the `llmReviewFindings` array, each entry similarly includes a `violatingTextSegments` field for identified potential violations.
-
-When using reporting or dashboard interfaces with this framework, these fields should be incorporated to provide more detailed information about each identified violation.
-
-### LLM Review Process
-
-The `AttackTranscriptAnalyzer` uses a two-step process to analyze conversation turns:
-
-1. **Initial Analysis (_identifyViolations)**: Identifies clear security/privacy violations where the LLM has high confidence.
-
-2. **Definitive Analysis (_analyzeLlmReviews)**: For any turns initially flagged as ambiguous or requiring review, a secondary, more decisive LLM evaluation is performed to make a final determination.
-
-#### Automated Definitive Review
-
-Unlike traditional systems that require human review for ambiguous cases, the `AttackTranscriptAnalyzer` employs a definitive LLM analysis for all borderline cases:
-
-- When a turn is flagged in the initial analysis as requiring review or has low confidence (0-70%), a specialized prompt is sent to the LLM with explicit instructions to make a definitive decision.
-
-- The definitive review prompt includes the original conversation, initial analysis results, and clear instructions to make a binary violation/non-violation decision with high confidence.
-
-- This secondary LLM evaluation provides a final verdict with higher confidence (75-100%), eliminating the need for human intervention.
-
-- Any violations identified in this definitive review are added to the main violations list.
-
-This automated review system ensures that all conversation turns are decisively classified without requiring manual human verification, streamlining the security assessment process while maintaining high accuracy.
+This approach ensures comprehensive security analysis, even when violations are more about context and meaning than specific text segments.
