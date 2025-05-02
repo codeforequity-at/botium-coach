@@ -145,12 +145,6 @@ class ConversationTracker {
 
     try {
       const { result } = await this.llmManager.sendRequest(messages, 'isRefusal')
-
-      if (result === true) {
-        console.log('messages', messages)
-        console.log('result!!!', result)
-      }
-
       return result
     } catch (error) {
       console.error('Error in refusal detection:', error)
