@@ -207,7 +207,14 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
     while (retries <= MAX_RETRIES) {
       try {
         const prompt = this._createViolationDetectionPrompt(turn, turnIndex);
-        const response = await this.llmManager.sendRequest(prompt, null, 'reasoning');
+        try {
+            const response = await this.llmManager.sendRequest(prompt, null, 'reasoning');
+            return response;
+        } catch (error) {
+            console.log('Error in LLM analysis:', error);
+            console.log('Failed prompt:', JSON.stringify(prompt, null, 2));
+            throw error;
+        }
 
         // Parse and validate the response
         if (response && response.result) {
@@ -321,9 +328,12 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
     // Process each turn with LLM analysis
     for (let i = 0; i < this.transcript.length; i++) {
       const turn = this.transcript[i]
-      const llmAnalysis = await this._analyzeTurnWithLLM(turn, i)
+      var llmAnalysis = await this._analyzeTurnWithLLM(turn, i)
+
+      llmAnalysis = llmAnalysis.result;
 
       if (llmAnalysis && llmAnalysis.isViolation) {
+
         violations.push({
           turn: i + 1,
           userMessage: turn.userMessage,
