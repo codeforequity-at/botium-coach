@@ -143,6 +143,14 @@ class SecurityTestManager {
   async analyzeAttackResult (result) {
     const selectedAttackMode = result.attackMode
 
+    // Clean transcript: remove turns where botResponse are blank, whitespace or undefined
+    if (result.transcript && Array.isArray(result.transcript)) {
+      result.transcript = result.transcript.filter(turn => {
+        const botBlank = !turn.botResponse || String(turn.botResponse).trim() === ''
+        return !botBlank
+      })
+    }
+
     // Save transcript to file with attack mode in filename (can be done async)
     if (result.transcript) {
       this.logToFile(JSON.stringify(result.transcript, null, 2),
