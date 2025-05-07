@@ -7,7 +7,6 @@ const _ = require('lodash')
 class TranscriptAnalyser {
   constructor ({
     distractionTopic = '',
-    CONFUSED_SENTANCES: confusedSentances = [],
     IGNORED_SENTANCES: ignoredSentances = [],
     DOMAINS: domains = [],
     BANNED_TOPICS: bannedTopic = [],
@@ -25,7 +24,6 @@ class TranscriptAnalyser {
     if (!llm) throw new Error('LLM is required for TranscriptAnalyser')
     this.promptResults = {}
     this.distrctionTopic = distractionTopic
-    this.confusedSentances = confusedSentances
     this.ignoredSentances = ignoredSentances
     this.allowedDomains = domains
     this.forbiddenTopics = bannedTopic
@@ -60,7 +58,6 @@ class TranscriptAnalyser {
       test: { dateCreated: new Date().toISOString() },
       allowedDomains: this.allowedDomains,
       approvedTopics: this.approvedTopics,
-      confusedSentences: this.confusedSentances,
       ignoredSentences: this.ignoredSentances,
       forbiddenTopics: this.forbiddenTopics,
       testResult: { cycleNumber, status: 'in_progress' },
