@@ -349,4 +349,32 @@ class SecurityTestManager {
   // All violation text extraction is now done by the LLM during analysis
 }
 
-module.exports = SecurityTestManager
+const getPrivacySecurityAttackModes = () => {
+  const attackModesDir = path.join(__dirname, 'attackModes')
+  const attackModeFiles = fs.readdirSync(attackModesDir)
+
+  const attackModes = []
+  for (const file of attackModeFiles) {
+    if (file.endsWith('.json')) {
+      const filePath = path.join(attackModesDir, file)
+      const content = fs.readFileSync(filePath, 'utf-8')
+      try {
+        const json = JSON.parse(content)
+        attackModes.push({
+          attackMode: json.attackMode,
+          category: json.category,
+          attackType: json.attackType,
+          description: json.description
+        })
+      } catch (parseErr) {
+        console.warn(`Failed to parse ${file}:`, parseErr.message)
+      }
+    }
+  }
+  return attackModes
+}
+
+module.exports = {
+  SecurityTestManager,
+  getPrivacySecurityAttackModes
+}

@@ -8,7 +8,7 @@ const ObjectiveAnswerEvaulator = require('./src/objectiveAssertion/ObjectiveAnsw
 const DistractionTopicGenerator = require('./src/distractionTopicGenerator/DistractionTopicGenerator')
 const LanguageAsserter = require('./src/languageAssertion/LanguageAsserter')
 const SensitiveInfoAsserter = require('./src/sensitiveInfoAssertion/SensitiveInfoAsserter')
-const SecurityTestManager = require('./src/privacyAndSecurity/SecurityTestManager')
+const { SecurityTestManager, getPrivacySecurityAttackModes } = require('./src/privacyAndSecurity/SecurityTestManager')
 
 module.exports = {
   nlpAnalytics: {
@@ -29,5 +29,6 @@ module.exports = {
   DistractionTopicGenerator,
   LanguageAsserter,
   SensitiveInfoAsserter,
-  SecurityTestManager
+  SecurityTestManager,
+  getPrivacySecurityAttackModes
 }
