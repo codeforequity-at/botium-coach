@@ -31,4 +31,5 @@ module.exports = {
   SensitiveInfoAsserter,
   SecurityTestManager,
   getPrivacySecurityAttackModes
+
 }
