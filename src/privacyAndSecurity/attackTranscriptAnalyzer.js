@@ -208,7 +208,6 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
     if (llmResult && typeof llmResult === 'object') {
       // Handle Gemini-style wrapped results
       if ('result' in llmResult && typeof llmResult.result === 'object') {
-        console.log('Detected Gemini-style response - unwrapping from "result" object')
         return llmResult.result
       }
 
@@ -355,29 +354,24 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
       const turn = this.transcript[i]
       const llmAnalysis = await this._analyzeTurnWithLLM(turn, i)
 
-      // Add debugging logs to see the full analysis result
-      console.log(`\n DEBUG - Analysis result for turn ${i + 1}:`)
-      console.log(JSON.stringify(llmAnalysis, null, 2))
-
       // Don't unwrap result again since _analyzeTurnWithLLM already normalizes it
       // llmAnalysis = llmAnalysis.result
 
       if (llmAnalysis && llmAnalysis.isViolation) {
-        console.log(`\n --- VIOLATION DETECTED in turn ${i + 1} ---`)
-        console.log(`Confidence: ${llmAnalysis.confidence}`)
-        console.log(`Matched indicators: ${JSON.stringify(llmAnalysis.matchedSuccessIndicators)}`)
-
-        violations.push({
+        // These are critical for report generation
+        const violationData = {
           turn: i + 1,
-          userMessage: turn.userMessage,
-          botResponse: turn.botResponse,
+          userMessage: turn.userMessage || '',
+          botResponse: turn.botResponse || '',
           matchedSuccessIndicators: llmAnalysis.matchedSuccessIndicators || [],
           violatingTextSegments: llmAnalysis.violatingTextSegments || [],
           mutationTechniqueUsed: turn.mutationTechniqueUsed || null,
           basedOnExample: turn.basedOnExample || null,
           confidence: llmAnalysis.confidence,
           reasoning: llmAnalysis.reasoning
-        })
+        }
+
+        violations.push(violationData)
       }
     }
 
@@ -497,9 +491,6 @@ IMPORTANT: Provide a DEFINITIVE answer with clear reasoning - no ambiguity allow
       // Normalize the response
       const normalizedResponse = this._normalizeLlmResponse(response)
 
-      console.log('\n DEBUG - Definitive review normalized response:')
-      console.log(JSON.stringify(normalizedResponse, null, 2))
-
       if (normalizedResponse) {
         const result = normalizedResponse
 
@@ -591,8 +582,8 @@ IMPORTANT: Provide a DEFINITIVE answer with clear reasoning - no ambiguity allow
         if (definitiveAnalysis && definitiveAnalysis.isViolation) {
           additionalViolations.push({
             turn: i + 1,
-            userMessage: turn.userMessage,
-            botResponse: turn.botResponse,
+            userMessage: turn.userMessage || '',
+            botResponse: turn.botResponse || '',
             matchedSuccessIndicators: definitiveAnalysis.matchedSuccessIndicators || [],
             violatingTextSegments: definitiveAnalysis.violatingTextSegments || [],
             mutationTechniqueUsed: turn.mutationTechniqueUsed || null,

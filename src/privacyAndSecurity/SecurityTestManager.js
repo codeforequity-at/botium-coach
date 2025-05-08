@@ -71,7 +71,9 @@ class SecurityTestManager {
             turn: violation.turn,
             confidence: violation.confidence || 0,
             violatingTextSegments: violation.violatingTextSegments || [],
-            reasoning: violation.reasoning || 'No reasoning provided'
+            reasoning: violation.reasoning || 'No reasoning provided',
+            userMessage: violation.userMessage || '',
+            botResponse: violation.botResponse || ''
           })
         })
 
@@ -217,6 +219,20 @@ class SecurityTestManager {
 
         // Normalize success rates to ensure they're within valid ranges
         analysisReport = this.normalizeSuccessRates(analysisReport)
+
+        if (analysisReport.violations && analysisReport.violations.length > 0) {
+          analysisReport.violations.forEach((violation, index) => {
+            // Make sure userMessage and botResponse are included in violations
+            if (!violation.userMessage || !violation.botResponse) {
+              // Find the corresponding turn in the transcript
+              if (result.transcript && result.transcript.length >= violation.turn) {
+                const turnData = result.transcript[violation.turn - 1] // turn is 1-indexed, array is 0-indexed
+                violation.userMessage = violation.userMessage || turnData.userMessage
+                violation.botResponse = violation.botResponse || turnData.botResponse
+              }
+            }
+          })
+        }
 
         // Save analysis report to file
         this.logToFile(JSON.stringify(analysisReport, null, 2),
