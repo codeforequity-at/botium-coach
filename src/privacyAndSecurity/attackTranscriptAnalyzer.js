@@ -198,6 +198,29 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
   }
 
   /**
+   * Normalizes LLM response to handle different formats from different LLMs
+   *
+   * @param {Object} llmResult - The raw result from LLM
+   * @returns {Object} - Normalized result object
+   * @private
+   */
+  _normalizeLlmResponse (llmResult) {
+    if (llmResult && typeof llmResult === 'object') {
+      // Handle Gemini-style wrapped results
+      if ('result' in llmResult && typeof llmResult.result === 'object') {
+        console.log('Detected Gemini-style response - unwrapping from "result" object')
+        return llmResult.result
+      }
+
+      // Already in the expected format
+      return llmResult
+    }
+
+    // Return a safe default if result is null or undefined
+    return { isViolation: false, confidence: 0, violatingTextSegments: [], matchedSuccessIndicators: [], matchedFailureIndicators: [] }
+  }
+
+  /**
    * Analyzes a turn using LLM with retry for reliability
    *
    * @param {Object} turn - Conversation turn to analyze
@@ -216,11 +239,12 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
         const prompt = this._createViolationDetectionPrompt(turn, turnIndex)
 
         const response = await this.llmManager.sendRequest(prompt, null, 'reasoning')
+        const normalizedResponse = this._normalizeLlmResponse(response)
 
         // Parse and validate the response
-        if (response && response.result) {
+        if (normalizedResponse) {
           // Verify the response has all required fields
-          const result = response.result
+          const result = normalizedResponse
 
           // Ensure violatingTextSegments is always an array
           if (!Array.isArray(result.violatingTextSegments)) {
@@ -329,11 +353,20 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
     // Process each turn with LLM analysis
     for (let i = 0; i < this.transcript.length; i++) {
       const turn = this.transcript[i]
-      let llmAnalysis = await this._analyzeTurnWithLLM(turn, i)
+      const llmAnalysis = await this._analyzeTurnWithLLM(turn, i)
 
-      llmAnalysis = llmAnalysis.result
+      // Add debugging logs to see the full analysis result
+      console.log(`\n DEBUG - Analysis result for turn ${i + 1}:`)
+      console.log(JSON.stringify(llmAnalysis, null, 2))
+
+      // Don't unwrap result again since _analyzeTurnWithLLM already normalizes it
+      // llmAnalysis = llmAnalysis.result
 
       if (llmAnalysis && llmAnalysis.isViolation) {
+        console.log(`\n --- VIOLATION DETECTED in turn ${i + 1} ---`)
+        console.log(`Confidence: ${llmAnalysis.confidence}`)
+        console.log(`Matched indicators: ${JSON.stringify(llmAnalysis.matchedSuccessIndicators)}`)
+
         violations.push({
           turn: i + 1,
           userMessage: turn.userMessage,
@@ -346,6 +379,13 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
           reasoning: llmAnalysis.reasoning
         })
       }
+    }
+
+    // Log violations summary
+    console.log('\n--- VIOLATIONS SUMMARY ---')
+    console.log(`Total violations found: ${violations.length}`)
+    if (violations.length > 0) {
+      console.log(`Violations by turn: ${violations.map(v => v.turn).join(', ')}`)
     }
 
     return violations
@@ -454,8 +494,14 @@ IMPORTANT: Provide a DEFINITIVE answer with clear reasoning - no ambiguity allow
       const prompt = this._createDefinitiveReviewPrompt(turn, initialAnalysis)
       const response = await this.llmManager.sendRequest(prompt, null, 'reasoning')
 
-      if (response && response.result) {
-        const result = response.result
+      // Normalize the response
+      const normalizedResponse = this._normalizeLlmResponse(response)
+
+      console.log('\n DEBUG - Definitive review normalized response:')
+      console.log(JSON.stringify(normalizedResponse, null, 2))
+
+      if (normalizedResponse) {
+        const result = normalizedResponse
 
         // Ensure violatingTextSegments is always an array
         if (!Array.isArray(result.violatingTextSegments)) {
