@@ -19,7 +19,6 @@ class AttackerAgent {
     this.completionTokensUsed = params.completionTokensUsed || 0
     this.attackModes = params.attackModes || (params.attackMode ? [params.attackMode] : ['prompt-injection'])
 
-    // Handle attack intensity (low, medium, high) instead of direct maxTurns
     if (params.attackIntensity) {
       switch (params.attackIntensity.toLowerCase()) {
         case 'low':
@@ -151,19 +150,16 @@ class AttackerAgent {
   }
 
   async generateResponse (msg, localPrimerMessage) {
-    console.log('localPrimerMessage', localPrimerMessage)
     const messages = this.prepareMessagesForResponse(msg)
     messages.unshift(localPrimerMessage)
 
-    const MAX_RETRY_ATTEMPTS = 3 // Maximum number of retry attempts
+    const MAX_RETRY_ATTEMPTS = 3
     let retryCount = 0
     let response = ''
 
     try {
       do {
-        console.log('Generating response...', messages)
         response = await this.generateLLMResponse(messages)
-        console.log('Response generated:', response)
 
         const isRefusal = await this.isRefusalResponse(response)
         if (!isRefusal || retryCount >= MAX_RETRY_ATTEMPTS) {
@@ -525,7 +521,6 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in 
     }
   }
 
-  // New method to run multiple attack modes in parallel
   async runMultiple (targetChatbot) {
     this.logger(`Beginning parallel execution of ${this.attackModes.length} attack modes`, this.uniqueTimestamp, null, false)
 
