@@ -399,6 +399,8 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
           llmReviewSuggested: this.attackConfig.requiresLlmReview || false,
           basedOnExample: 'domain-specific-generation',
           mutationTechniqueUsed: null,
+          mutationTechniqueUsedFriendly: null,
+          attackType: this.attackConfig.attackType || this._toFriendlyCase(this.attackConfig.attackMode),
           turn: 1 // Add explicit turn number to help with tracking
         }
 
@@ -456,6 +458,10 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in 
             mutationTechniqueUsed: this.attackConfig.mutationTechniques.length > 0
               ? this.attackConfig.mutationTechniques[turn % this.attackConfig.mutationTechniques.length]
               : null,
+            mutationTechniqueUsedFriendly: this.attackConfig.mutationTechniques.length > 0
+              ? this._toFriendlyCase(this.attackConfig.mutationTechniques[turn % this.attackConfig.mutationTechniques.length])
+              : null,
+            attackType: this.attackConfig.attackType || this._toFriendlyCase(this.attackConfig.attackMode),
             turn: turn + 1 // Add explicit turn number (1-indexed)
           }
 
@@ -475,6 +481,7 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in 
       const analysisResult = {
         domain,
         attackMode: this.attackConfig.attackMode,
+        attackType: this.attackConfig.attackType || this._toFriendlyCase(this.attackConfig.attackMode),
         transcript,
         success: transcript.some(entry => entry.matchedSuccessIndicators.length > 0),
         turns: transcript.length,
@@ -506,6 +513,7 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in 
       return {
         domain,
         attackMode: this.attackConfig.attackMode,
+        attackType: this.attackConfig.attackType || this._toFriendlyCase(this.attackConfig.attackMode),
         transcript,
         success: false,
         error: error.message,
@@ -574,6 +582,17 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in 
 
   async _stop (container) {
     await stopContainer(container, this.logger)
+  }
+
+  // Helper function to convert camelCase or kebab-case to Title Case
+  _toFriendlyCase (str) {
+    if (!str) return str
+    // Handle kebab-case
+    str = str.replace(/-+/g, ' ')
+    // Handle camelCase (insert space before capital letters)
+    str = str.replace(/([A-Z])/g, ' $1')
+    // Capitalize the first letter of each word and trim spaces
+    return str.replace(/\b\w/g, char => char.toUpperCase()).trim()
   }
 }
 
