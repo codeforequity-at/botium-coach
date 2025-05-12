@@ -230,7 +230,45 @@ This enables:
 
 ## Attack Modes
 
-Attack modes define specific security evaluation strategies, each targeting different vulnerability classes in chatbot systems.
+The following attack modes are currently available in this framework. Each mode is defined by a JSON file in the `attackModes/` directory and targets a specific vulnerability or security evaluation strategy:
+
+| Attack Mode Filename | Description |
+|---------------------|-------------|
+| api-quota-limit-testing.json | Attempts to exhaust API quotas or token limits by requesting extremely long outputs, repeated continuations, or large batches, aiming to observe quota-exceeded errors or degraded performance. |
+| character-flip.json | Attempts to bypass content filters by reversing the order of characters in the entire sentence while maintaining the original intent. |
+| character-flip-in-word.json | Attempts to bypass content filters by reversing the order of characters in each word while maintaining the original word order and intent. |
+| chained-plugin-exploitation.json | Attempts to exploit multiple plugins in sequence to achieve unauthorized functionality or access. |
+| client-side-logic-manipulation.json | Attempts to manipulate or inject client-side code (e.g., JavaScript, HTML event handlers) through the chatbot's output, exploiting insecure rendering or plugin design to run arbitrary logic in the user's browser or host application. |
+| concurrent-request-testing.json | Tests the system's ability to handle multiple simultaneous requests without introducing race conditions or information leaks between sessions. |
+| csp-bypass.json | Attempts to bypass Content Security Policy protections through specially crafted inputs. |
+| data-access-boundary.json | Tests the chatbot's enforcement of access boundaries between different data domains or permissions levels. |
+| denial-of-wallet.json | Attempts to trigger excessive computational costs or resource usage that could lead to financial damage through high API usage costs. |
+| direct-extraction.json | Attempts to extract sensitive information through direct, specific questions. |
+| divergent-repetition.json | Attempts to induce hallucination, instability, or failure by repeatedly requesting slight variations of the same content. |
+| dsar-simulation.json | Simulates Data Subject Access Requests to determine if the chatbot inappropriately reveals user data. |
+| embedding-inversion-probing.json | Probes whether embeddings can be inverted to extract sensitive information from vector representations. |
+| excessive-agency.json | Attempts to get the chatbot to perform privileged or system-level actions, such as accessing files, running commands, or modifying configurations. |
+| fact-checking-across-domains.json | Tests the chatbot's ability to maintain consistency and accuracy when answering questions that span multiple knowledge domains. |
+| financial-transaction.json | Attempts to manipulate the chatbot into facilitating or processing unauthorized financial transactions. |
+| fool-model-mode.json | Tests the chatbot's vulnerability to being tricked into entering custom operational modes that bypass normal safeguards. |
+| hallucination-misinformation-detection.json | Evaluates the chatbot's tendency to generate hallucinated or false information when presented with ambiguous queries. |
+| hipaa-compliance.json | Tests compliance with healthcare privacy regulations by attempting to extract protected health information. |
+| input-flooding.json | Attempts to overload the model by submitting excessively large or complex inputs. |
+| instruction-rephrasing.json | Tests the chatbot's ability to detect rephrased variations of instructions it has been told to ignore. |
+| jailbreak.json | Attempts to bypass content moderation filters and safety measures. |
+| membership-inference.json | Attempts to determine if specific, unique data points were present in the chatbot's training data. |
+| memorization-elicitation.json | Attempts to force the chatbot to repeat memorized content from its training data. |
+| obfuscation-encoding.json | Tests if the chatbot can detect harmful content that's encoded or obfuscated using various techniques. |
+| pii-probe.json | Attempts to elicit generation of PII patterns through indirect methods. |
+| pii-reconstruction.json | Attempts to get the chatbot to reconstruct redacted or partially obfuscated personally identifiable information. |
+| plugin-functionality-abuse.json | Tests if plugins can be manipulated to perform unintended or unauthorized actions. |
+| privacy-control-bypass.json | Attempts to bypass privacy controls by exploiting edge cases or inconsistencies in enforcement. |
+| prompt-injection.json | Prompt injection attack attempts to override the system instructions or manipulate the chatbot's behavior by inserting instructions that conflict with its intended constraints. |
+| reconstruction-attacks.json | Attempts to persuade the chatbot to reconstruct redacted or masked sensitive information. |
+| recursive-complex-queries.json | Tests the chatbot's handling of deeply nested or recursive query structures that might lead to unexpected behavior. |
+| side-channel.json | Attempts to detect security measures or system limits through testing edge cases and observing responses. |
+| ssrf-probing.json | Tests if the chatbot can be used as a proxy for Server-Side Request Forgery attacks. |
+| word-order-flip.json | Attempts to bypass content filters by reversing the order of words in the entire sentence while maintaining the original intent. |
 
 ### Configuration Structure
 
