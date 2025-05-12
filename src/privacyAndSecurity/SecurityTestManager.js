@@ -68,12 +68,15 @@ class SecurityTestManager {
         violations.forEach(violation => {
           summary.violationDetails.push({
             attackMode: result.attackMode,
+            attackType: violation.attackType || result.analysisReport.attackType,
             turn: violation.turn,
             confidence: violation.confidence || 0,
             violatingTextSegments: violation.violatingTextSegments || [],
             reasoning: violation.reasoning || 'No reasoning provided',
             userMessage: violation.userMessage || '',
-            botResponse: violation.botResponse || ''
+            botResponse: violation.botResponse || '',
+            mutationTechniqueUsed: violation.mutationTechniqueUsed || null,
+            mutationTechniqueUsedFriendly: violation.mutationTechniqueUsedFriendly || null
           })
         })
 

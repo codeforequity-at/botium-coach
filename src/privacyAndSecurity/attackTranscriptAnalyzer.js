@@ -81,6 +81,23 @@ class AttackTranscriptAnalyzer {
   }
 
   /**
+   * Helper function to convert camelCase or kebab-case to Title Case
+   *
+   * @param {string} str - The input string to convert
+   * @returns {string} - The converted string in Title Case
+   * @private
+   */
+  _toFriendlyCase (str) {
+    if (!str) return str
+    // Handle kebab-case
+    str = str.replace(/-+/g, ' ')
+    // Handle camelCase (insert space before capital letters)
+    str = str.replace(/([A-Z])/g, ' $1')
+    // Capitalize the first letter of each word and trim spaces
+    return str.replace(/\b\w/g, char => char.toUpperCase()).trim()
+  }
+
+  /**
    * Aggregates mutation techniques used across all turns
    *
    * @returns {Object} - Map of technique to usage count
@@ -90,8 +107,10 @@ class AttackTranscriptAnalyzer {
     const techniques = {}
 
     this.transcript.forEach(turn => {
-      if (turn.mutationTechniqueUsed) {
-        techniques[turn.mutationTechniqueUsed] = (techniques[turn.mutationTechniqueUsed] || 0) + 1
+      // Use the friendly name for aggregation if available, otherwise generate it
+      const friendlyTechnique = turn.mutationTechniqueUsedFriendly || this._toFriendlyCase(turn.mutationTechniqueUsed)
+      if (friendlyTechnique) {
+        techniques[friendlyTechnique] = (techniques[friendlyTechnique] || 0) + 1
       }
     })
 
@@ -366,6 +385,8 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
           matchedSuccessIndicators: llmAnalysis.matchedSuccessIndicators || [],
           violatingTextSegments: llmAnalysis.violatingTextSegments || [],
           mutationTechniqueUsed: turn.mutationTechniqueUsed || null,
+          mutationTechniqueUsedFriendly: turn.mutationTechniqueUsedFriendly || this._toFriendlyCase(turn.mutationTechniqueUsed),
+          attackType: turn.attackType || this._toFriendlyCase(this.attackMetadata.attackMode),
           basedOnExample: turn.basedOnExample || null,
           confidence: llmAnalysis.confidence,
           reasoning: llmAnalysis.reasoning
@@ -587,6 +608,8 @@ IMPORTANT: Provide a DEFINITIVE answer with clear reasoning - no ambiguity allow
             matchedSuccessIndicators: definitiveAnalysis.matchedSuccessIndicators || [],
             violatingTextSegments: definitiveAnalysis.violatingTextSegments || [],
             mutationTechniqueUsed: turn.mutationTechniqueUsed || null,
+            mutationTechniqueUsedFriendly: turn.mutationTechniqueUsedFriendly || this._toFriendlyCase(turn.mutationTechniqueUsed),
+            attackType: turn.attackType || this._toFriendlyCase(this.attackMetadata.attackMode),
             basedOnExample: turn.basedOnExample || null,
             confidence: definitiveAnalysis.confidence,
             reasoning: definitiveAnalysis.reasoning,
@@ -646,6 +669,7 @@ IMPORTANT: Provide a DEFINITIVE answer with clear reasoning - no ambiguity allow
       return {
         error: 'Invalid inputs provided or LLM manager missing',
         attackMode: this.attackMetadata?.attackMode || 'unknown',
+        attackType: this.attackMetadata?.attackType || this._toFriendlyCase(this.attackMetadata?.attackMode || 'unknown'),
         domain: 'unknown',
         totalTurns: 0,
         successfulAttacks: 0,
@@ -736,6 +760,7 @@ IMPORTANT: Provide a DEFINITIVE answer with clear reasoning - no ambiguity allow
     // Build and return the report
     return {
       attackMode: this.attackMetadata.attackMode,
+      attackType: this.attackMetadata.attackType || this._toFriendlyCase(this.attackMetadata.attackMode),
       domain,
       totalTurns,
       successfulAttacks,
