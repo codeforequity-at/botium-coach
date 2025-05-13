@@ -15,6 +15,8 @@ The main agent class that manages the conversation with the chatbot and performs
 - Regularly assesses confidence in identified domains
 - Stops early if confidence threshold is reached
 - Supports multi-domain identification with confidence scores
+- Provides fallback mechanisms when LLM responses fail
+- Offers verbose logging option to monitor conversation in real-time
 
 ### 2. Standard Questions
 
@@ -33,6 +35,15 @@ The agent uses an LLM to generate contextually aware follow-up questions based o
 - Clarify ambiguities
 - Test detected domains with more specific questions
 - Use varied questioning styles (broad → specific → confirmatory)
+- Fall back to domain-agnostic questions if LLM generation fails
+
+### 4. Fallback Mechanisms
+
+The module includes robust fallback strategies:
+- Keyword-based domain detection when LLM fails to parse JSON responses
+- Pre-defined domain-agnostic questions when LLM fails to generate follow-up questions
+- Multiple retry attempts with detailed error logging
+- Automatic domain inference from transcript content as a last resort
 
 ## Usage
 
@@ -47,7 +58,9 @@ const agent = new DomainIdentifierAgent({
   initialQuestions: [...],         // Optional: Override default questions
   maxTurns: 15,                    // Optional: Maximum conversation turns (default: 20)
   confidenceThreshold: 90,         // Optional: Confidence score to stop early (default: 85)
-  autoSummariseWithLlm: true       // Optional: Enable final LLM summarization (default: true)
+  autoSummariseWithLlm: true,      // Optional: Enable final LLM summarization (default: true)
+  verboseLogging: true,            // Optional: Enable detailed conversation logging (default: false)
+  uniqueTimestamp: 'session123'    // Optional: Unique identifier for logging (default: null)
 });
 
 // Run domain identification
@@ -98,13 +111,23 @@ The `run()` method returns an object with the following structure:
 
 2. **Standard Questions Phase**: The agent asks predefined standard questions to establish basic domain information.
 
-3. **Confidence Assessment**: After every 3 questions (or at the end of standard questions), the agent uses the LLM to assess confidence in identified domains.
+3. **Confidence Assessment**: After every 3 questions (or at the end of standard questions), the agent uses the LLM to assess confidence in identified domains. If the LLM fails, a keyword-based domain inferencing system takes over.
 
-4. **Dynamic Exploration Phase**: The agent generates contextually aware follow-up questions based on previous responses, targeting areas that need clarification.
+4. **Dynamic Exploration Phase**: The agent generates contextually aware follow-up questions based on previous responses, targeting areas that need clarification. If question generation fails, it falls back to a pre-defined set of domain-agnostic questions.
 
 5. **Early Stopping**: If all primary domains reach the confidence threshold, the conversation can stop early.
 
 6. **Final Assessment**: The agent performs a final domain confidence assessment on the complete transcript.
+
+## Error Handling and Resilience
+
+The module includes several mechanisms to ensure reliable operation:
+
+- **LLM Response Validation**: Thorough validation and parsing of LLM JSON responses
+- **Multiple Retry Attempts**: Up to 3 retry attempts for LLM calls before falling back
+- **Detailed Logging**: Comprehensive logging of errors and fallback actions when verbose mode is enabled
+- **Domain Inference Fallback**: If LLM assessment fails, domains are inferred from keyword frequency in the transcript
+- **Empty Response Handling**: Graceful handling of empty or invalid responses from both the LLM and the chatbot
 
 ## Example
 
