@@ -20,6 +20,7 @@ class ConversationTracker {
     this.CONFUSED_SENTANCES = params.confusedSentences || []
     this.BANNED_TOPICS = params.forbiddenTopics || []
     this.approvedTopics = params.approvedTopics || []
+    this.restrictedPhrases = params.restrictedPhrases || []
     this.logger = logger
     this.commonInstance = new Common(this.logger)
     this.llmManager = params.llm
@@ -375,6 +376,7 @@ class ConversationTracker {
       DOMAINS: localAllowedDomains,
       BANNED_TOPICS: [...this.BANNED_TOPICS],
       OK_TOPICS: [...this.approvedTopics],
+      RESTRICTED_PHRASES: [...this.restrictedPhrases],
       conversationHistory: localConversationHistory,
       uniqueTimestamp: localUniqueTimestamp,
       llm: this.llmManager
