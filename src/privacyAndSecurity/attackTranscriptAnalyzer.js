@@ -305,6 +305,7 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
           retries++
 
           if (retries > MAX_RETRIES) {
+            console.error('\x1b[31m%s\x1b[0m', `ERROR: MAX RETRIES REACHED (${MAX_RETRIES + 1} attempts) for turn ${turnIndex + 1}! Using fallback analysis.`)
             return this._createFallbackAnalysisResult(turn, false)
           }
 
@@ -312,10 +313,11 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
           await new Promise(resolve => setTimeout(resolve, 1000))
         }
       } catch (error) {
-        console.error(`Error in LLM analysis for turn ${turnIndex + 1}:`, error)
+        console.error(`WARNING ONLY: Error in LLM analysis for turn ${turnIndex + 1}, attempt ${retries + 1} of ${MAX_RETRIES + 1}:`, error)
         retries++
 
         if (retries > MAX_RETRIES) {
+          console.error('\x1b[31m%s\x1b[0m', `ERROR: MAX RETRIES REACHED (${MAX_RETRIES + 1} attempts) for turn ${turnIndex + 1}! Using fallback analysis.`)
           return this._createFallbackAnalysisResult(turn, false)
         }
 

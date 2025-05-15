@@ -210,7 +210,7 @@ class AttackerAgent {
     ]
 
     try {
-      const { result } = await this.llmManager.sendRequest(messages, 'isRefusal')
+      const { result } = await this.llmManager.sendRequest(messages, 'isRefusal', 'default', true)
 
       if (result === true) {
         this.logger('Refusal detected', this.uniqueTimestamp, null, true)
@@ -243,7 +243,7 @@ class AttackerAgent {
   }
 
   async generateLLMResponse (messages) {
-    const { result, usage } = await this.llmManager.sendRequest(messages)
+    const { result, usage } = await this.llmManager.sendRequest(messages, null, 'default', true)
     this.promptTokensUsed += usage?.promptTokens || 0
     this.completionTokensUsed += usage?.completionTokens || 0
 
@@ -301,13 +301,22 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
     }
 
     try {
-      const { result } = await this.llmManager.sendRequest([systemPrompt, userPrompt])
+      const response = await this.llmManager.sendRequest([systemPrompt, userPrompt], null, 'default', true)
+      const { result } = response
       if (typeof result === 'object' && result !== null && 'result' in result) {
         return String(result.result)
       }
       return String(result)
     } catch (error) {
       this.logger(`Error in sendRequest: ${error.message}\nSystemPrompt: ${JSON.stringify(systemPrompt)}\nUserPrompt: ${JSON.stringify(userPrompt)}`, this.uniqueTimestamp, null, true)
+      // Log the result if it exists
+      if (error.response && error.response.data) {
+        this.logger(`Response data: ${JSON.stringify(error.response.data)}`, this.uniqueTimestamp, null, true)
+      }
+      // If we have the raw LLM response, log it
+      if (error.rawResponse) {
+        this.logger(`Raw LLM response: ${JSON.stringify(error.rawResponse)}`, this.uniqueTimestamp, null, true)
+      }
       throw error
     }
   }
@@ -318,7 +327,7 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
 
     try {
       const messages = [systemPrompt, userPrompt]
-      const { result, usage } = await this.llmManager.sendRequest(messages)
+      const { result, usage } = await this.llmManager.sendRequest(messages, null, 'default', true)
 
       this.promptTokensUsed += usage?.promptTokens || 0
       this.completionTokensUsed += usage?.completionTokens || 0
@@ -428,7 +437,7 @@ For example, use "John Smith" instead of [NAME], "New York" instead of [CITY], "
 IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in the following JSON format:\n{ "result": "<the follow-up message>" }\nDo not include any explanation or additional text.`
           }
 
-          const { result: followUpMessageRaw } = await this.llmManager.sendRequest([systemPrompt, contextPrompt])
+          const { result: followUpMessageRaw } = await this.llmManager.sendRequest([systemPrompt, contextPrompt], null, 'default', true)
           // Ensure followUpMessage is a string (in case a JSON object is returned)
           let followUpMessage = followUpMessageRaw
           if (typeof followUpMessage === 'object' && followUpMessage !== null && 'result' in followUpMessage) {
