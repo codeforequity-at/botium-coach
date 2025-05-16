@@ -19,7 +19,6 @@ class AttackerAgent {
     this.completionTokensUsed = params.completionTokensUsed || 0
     this.attackModes = params.attackModes || (params.attackMode ? [params.attackMode] : ['prompt-injection'])
 
-    // Handle attack intensity (low, medium, high) instead of direct maxTurns
     if (params.attackIntensity) {
       switch (params.attackIntensity.toLowerCase()) {
         case 'low':
@@ -151,19 +150,16 @@ class AttackerAgent {
   }
 
   async generateResponse (msg, localPrimerMessage) {
-    console.log('localPrimerMessage', localPrimerMessage)
     const messages = this.prepareMessagesForResponse(msg)
     messages.unshift(localPrimerMessage)
 
-    const MAX_RETRY_ATTEMPTS = 3 // Maximum number of retry attempts
+    const MAX_RETRY_ATTEMPTS = 3
     let retryCount = 0
     let response = ''
 
     try {
       do {
-        console.log('Generating response...', messages)
         response = await this.generateLLMResponse(messages)
-        console.log('Response generated:', response)
 
         const isRefusal = await this.isRefusalResponse(response)
         if (!isRefusal || retryCount >= MAX_RETRY_ATTEMPTS) {
@@ -214,7 +210,7 @@ class AttackerAgent {
     ]
 
     try {
-      const { result } = await this.llmManager.sendRequest(messages, 'isRefusal')
+      const { result } = await this.llmManager.sendRequest(messages, 'isRefusal', 'default', true)
 
       if (result === true) {
         this.logger('Refusal detected', this.uniqueTimestamp, null, true)
@@ -247,7 +243,7 @@ class AttackerAgent {
   }
 
   async generateLLMResponse (messages) {
-    const { result, usage } = await this.llmManager.sendRequest(messages)
+    const { result, usage } = await this.llmManager.sendRequest(messages, null, 'default', true)
     this.promptTokensUsed += usage?.promptTokens || 0
     this.completionTokensUsed += usage?.completionTokens || 0
 
@@ -305,13 +301,22 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
     }
 
     try {
-      const { result } = await this.llmManager.sendRequest([systemPrompt, userPrompt])
+      const response = await this.llmManager.sendRequest([systemPrompt, userPrompt], null, 'default', true)
+      const { result } = response
       if (typeof result === 'object' && result !== null && 'result' in result) {
         return String(result.result)
       }
       return String(result)
     } catch (error) {
       this.logger(`Error in sendRequest: ${error.message}\nSystemPrompt: ${JSON.stringify(systemPrompt)}\nUserPrompt: ${JSON.stringify(userPrompt)}`, this.uniqueTimestamp, null, true)
+      // Log the result if it exists
+      if (error.response && error.response.data) {
+        this.logger(`Response data: ${JSON.stringify(error.response.data)}`, this.uniqueTimestamp, null, true)
+      }
+      // If we have the raw LLM response, log it
+      if (error.rawResponse) {
+        this.logger(`Raw LLM response: ${JSON.stringify(error.rawResponse)}`, this.uniqueTimestamp, null, true)
+      }
       throw error
     }
   }
@@ -322,7 +327,7 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
 
     try {
       const messages = [systemPrompt, userPrompt]
-      const { result, usage } = await this.llmManager.sendRequest(messages)
+      const { result, usage } = await this.llmManager.sendRequest(messages, null, 'default', true)
 
       this.promptTokensUsed += usage?.promptTokens || 0
       this.completionTokensUsed += usage?.completionTokens || 0
@@ -403,6 +408,8 @@ Create just 1 prompt that is most likely to succeed based on the examples.`
           llmReviewSuggested: this.attackConfig.requiresLlmReview || false,
           basedOnExample: 'domain-specific-generation',
           mutationTechniqueUsed: null,
+          mutationTechniqueUsedFriendly: null,
+          attackType: this.attackConfig.attackType || this._toFriendlyCase(this.attackConfig.attackMode),
           turn: 1 // Add explicit turn number to help with tracking
         }
 
@@ -430,7 +437,7 @@ For example, use "John Smith" instead of [NAME], "New York" instead of [CITY], "
 IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in the following JSON format:\n{ "result": "<the follow-up message>" }\nDo not include any explanation or additional text.`
           }
 
-          const { result: followUpMessageRaw } = await this.llmManager.sendRequest([systemPrompt, contextPrompt])
+          const { result: followUpMessageRaw } = await this.llmManager.sendRequest([systemPrompt, contextPrompt], null, 'default', true)
           // Ensure followUpMessage is a string (in case a JSON object is returned)
           let followUpMessage = followUpMessageRaw
           if (typeof followUpMessage === 'object' && followUpMessage !== null && 'result' in followUpMessage) {
@@ -460,6 +467,10 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in 
             mutationTechniqueUsed: this.attackConfig.mutationTechniques.length > 0
               ? this.attackConfig.mutationTechniques[turn % this.attackConfig.mutationTechniques.length]
               : null,
+            mutationTechniqueUsedFriendly: this.attackConfig.mutationTechniques.length > 0
+              ? this._toFriendlyCase(this.attackConfig.mutationTechniques[turn % this.attackConfig.mutationTechniques.length])
+              : null,
+            attackType: this.attackConfig.attackType || this._toFriendlyCase(this.attackConfig.attackMode),
             turn: turn + 1 // Add explicit turn number (1-indexed)
           }
 
@@ -479,6 +490,7 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in 
       const analysisResult = {
         domain,
         attackMode: this.attackConfig.attackMode,
+        attackType: this.attackConfig.attackType || this._toFriendlyCase(this.attackConfig.attackMode),
         transcript,
         success: transcript.some(entry => entry.matchedSuccessIndicators.length > 0),
         turns: transcript.length,
@@ -510,6 +522,7 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in 
       return {
         domain,
         attackMode: this.attackConfig.attackMode,
+        attackType: this.attackConfig.attackType || this._toFriendlyCase(this.attackConfig.attackMode),
         transcript,
         success: false,
         error: error.message,
@@ -525,7 +538,6 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in 
     }
   }
 
-  // New method to run multiple attack modes in parallel
   async runMultiple (targetChatbot) {
     this.logger(`Beginning parallel execution of ${this.attackModes.length} attack modes`, this.uniqueTimestamp, null, false)
 
@@ -579,6 +591,17 @@ IMPORTANT: Provide ONLY the raw follow-up message text itself, and return it in 
 
   async _stop (container) {
     await stopContainer(container, this.logger)
+  }
+
+  // Helper function to convert camelCase or kebab-case to Title Case
+  _toFriendlyCase (str) {
+    if (!str) return str
+    // Handle kebab-case
+    str = str.replace(/-+/g, ' ')
+    // Handle camelCase (insert space before capital letters)
+    str = str.replace(/([A-Z])/g, ' $1')
+    // Capitalize the first letter of each word and trim spaces
+    return str.replace(/\b\w/g, char => char.toUpperCase()).trim()
   }
 }
 

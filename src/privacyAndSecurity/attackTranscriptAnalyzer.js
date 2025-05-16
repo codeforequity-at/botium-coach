@@ -81,6 +81,23 @@ class AttackTranscriptAnalyzer {
   }
 
   /**
+   * Helper function to convert camelCase or kebab-case to Title Case
+   *
+   * @param {string} str - The input string to convert
+   * @returns {string} - The converted string in Title Case
+   * @private
+   */
+  _toFriendlyCase (str) {
+    if (!str) return str
+    // Handle kebab-case
+    str = str.replace(/-+/g, ' ')
+    // Handle camelCase (insert space before capital letters)
+    str = str.replace(/([A-Z])/g, ' $1')
+    // Capitalize the first letter of each word and trim spaces
+    return str.replace(/\b\w/g, char => char.toUpperCase()).trim()
+  }
+
+  /**
    * Aggregates mutation techniques used across all turns
    *
    * @returns {Object} - Map of technique to usage count
@@ -90,8 +107,10 @@ class AttackTranscriptAnalyzer {
     const techniques = {}
 
     this.transcript.forEach(turn => {
-      if (turn.mutationTechniqueUsed) {
-        techniques[turn.mutationTechniqueUsed] = (techniques[turn.mutationTechniqueUsed] || 0) + 1
+      // Use the friendly name for aggregation if available, otherwise generate it
+      const friendlyTechnique = turn.mutationTechniqueUsedFriendly || this._toFriendlyCase(turn.mutationTechniqueUsed)
+      if (friendlyTechnique) {
+        techniques[friendlyTechnique] = (techniques[friendlyTechnique] || 0) + 1
       }
     })
 
@@ -198,6 +217,28 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
   }
 
   /**
+   * Normalizes LLM response to handle different formats from different LLMs
+   *
+   * @param {Object} llmResult - The raw result from LLM
+   * @returns {Object} - Normalized result object
+   * @private
+   */
+  _normalizeLlmResponse (llmResult) {
+    if (llmResult && typeof llmResult === 'object') {
+      // Handle Gemini-style wrapped results
+      if ('result' in llmResult && typeof llmResult.result === 'object') {
+        return llmResult.result
+      }
+
+      // Already in the expected format
+      return llmResult
+    }
+
+    // Return a safe default if result is null or undefined
+    return { isViolation: false, confidence: 0, violatingTextSegments: [], matchedSuccessIndicators: [], matchedFailureIndicators: [] }
+  }
+
+  /**
    * Analyzes a turn using LLM with retry for reliability
    *
    * @param {Object} turn - Conversation turn to analyze
@@ -216,11 +257,12 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
         const prompt = this._createViolationDetectionPrompt(turn, turnIndex)
 
         const response = await this.llmManager.sendRequest(prompt, null, 'reasoning')
+        const normalizedResponse = this._normalizeLlmResponse(response)
 
         // Parse and validate the response
-        if (response && response.result) {
+        if (normalizedResponse) {
           // Verify the response has all required fields
-          const result = response.result
+          const result = normalizedResponse
 
           // Ensure violatingTextSegments is always an array
           if (!Array.isArray(result.violatingTextSegments)) {
@@ -263,6 +305,7 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
           retries++
 
           if (retries > MAX_RETRIES) {
+            console.error('\x1b[31m%s\x1b[0m', `ERROR: MAX RETRIES REACHED (${MAX_RETRIES + 1} attempts) for turn ${turnIndex + 1}! Using fallback analysis.`)
             return this._createFallbackAnalysisResult(turn, false)
           }
 
@@ -270,10 +313,11 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
           await new Promise(resolve => setTimeout(resolve, 1000))
         }
       } catch (error) {
-        console.error(`Error in LLM analysis for turn ${turnIndex + 1}:`, error)
+        console.error(`WARNING ONLY: Error in LLM analysis for turn ${turnIndex + 1}, attempt ${retries + 1} of ${MAX_RETRIES + 1}:`, error)
         retries++
 
         if (retries > MAX_RETRIES) {
+          console.error('\x1b[31m%s\x1b[0m', `ERROR: MAX RETRIES REACHED (${MAX_RETRIES + 1} attempts) for turn ${turnIndex + 1}! Using fallback analysis.`)
           return this._createFallbackAnalysisResult(turn, false)
         }
 
@@ -329,23 +373,36 @@ IMPORTANT: Be extremely thorough in your analysis. Subtle violations are still v
     // Process each turn with LLM analysis
     for (let i = 0; i < this.transcript.length; i++) {
       const turn = this.transcript[i]
-      let llmAnalysis = await this._analyzeTurnWithLLM(turn, i)
+      const llmAnalysis = await this._analyzeTurnWithLLM(turn, i)
 
-      llmAnalysis = llmAnalysis.result
+      // Don't unwrap result again since _analyzeTurnWithLLM already normalizes it
+      // llmAnalysis = llmAnalysis.result
 
       if (llmAnalysis && llmAnalysis.isViolation) {
-        violations.push({
+        // These are critical for report generation
+        const violationData = {
           turn: i + 1,
-          userMessage: turn.userMessage,
-          botResponse: turn.botResponse,
+          userMessage: turn.userMessage || '',
+          botResponse: turn.botResponse || '',
           matchedSuccessIndicators: llmAnalysis.matchedSuccessIndicators || [],
           violatingTextSegments: llmAnalysis.violatingTextSegments || [],
           mutationTechniqueUsed: turn.mutationTechniqueUsed || null,
+          mutationTechniqueUsedFriendly: turn.mutationTechniqueUsedFriendly || this._toFriendlyCase(turn.mutationTechniqueUsed),
+          attackType: turn.attackType || this._toFriendlyCase(this.attackMetadata.attackMode),
           basedOnExample: turn.basedOnExample || null,
           confidence: llmAnalysis.confidence,
           reasoning: llmAnalysis.reasoning
-        })
+        }
+
+        violations.push(violationData)
       }
+    }
+
+    // Log violations summary
+    console.log('\n--- VIOLATIONS SUMMARY ---')
+    console.log(`Total violations found: ${violations.length}`)
+    if (violations.length > 0) {
+      console.log(`Violations by turn: ${violations.map(v => v.turn).join(', ')}`)
     }
 
     return violations
@@ -454,8 +511,11 @@ IMPORTANT: Provide a DEFINITIVE answer with clear reasoning - no ambiguity allow
       const prompt = this._createDefinitiveReviewPrompt(turn, initialAnalysis)
       const response = await this.llmManager.sendRequest(prompt, null, 'reasoning')
 
-      if (response && response.result) {
-        const result = response.result
+      // Normalize the response
+      const normalizedResponse = this._normalizeLlmResponse(response)
+
+      if (normalizedResponse) {
+        const result = normalizedResponse
 
         // Ensure violatingTextSegments is always an array
         if (!Array.isArray(result.violatingTextSegments)) {
@@ -545,11 +605,13 @@ IMPORTANT: Provide a DEFINITIVE answer with clear reasoning - no ambiguity allow
         if (definitiveAnalysis && definitiveAnalysis.isViolation) {
           additionalViolations.push({
             turn: i + 1,
-            userMessage: turn.userMessage,
-            botResponse: turn.botResponse,
+            userMessage: turn.userMessage || '',
+            botResponse: turn.botResponse || '',
             matchedSuccessIndicators: definitiveAnalysis.matchedSuccessIndicators || [],
             violatingTextSegments: definitiveAnalysis.violatingTextSegments || [],
             mutationTechniqueUsed: turn.mutationTechniqueUsed || null,
+            mutationTechniqueUsedFriendly: turn.mutationTechniqueUsedFriendly || this._toFriendlyCase(turn.mutationTechniqueUsed),
+            attackType: turn.attackType || this._toFriendlyCase(this.attackMetadata.attackMode),
             basedOnExample: turn.basedOnExample || null,
             confidence: definitiveAnalysis.confidence,
             reasoning: definitiveAnalysis.reasoning,
@@ -609,6 +671,7 @@ IMPORTANT: Provide a DEFINITIVE answer with clear reasoning - no ambiguity allow
       return {
         error: 'Invalid inputs provided or LLM manager missing',
         attackMode: this.attackMetadata?.attackMode || 'unknown',
+        attackType: this.attackMetadata?.attackType || this._toFriendlyCase(this.attackMetadata?.attackMode || 'unknown'),
         domain: 'unknown',
         totalTurns: 0,
         successfulAttacks: 0,
@@ -699,6 +762,7 @@ IMPORTANT: Provide a DEFINITIVE answer with clear reasoning - no ambiguity allow
     // Build and return the report
     return {
       attackMode: this.attackMetadata.attackMode,
+      attackType: this.attackMetadata.attackType || this._toFriendlyCase(this.attackMetadata.attackMode),
       domain,
       totalTurns,
       successfulAttacks,

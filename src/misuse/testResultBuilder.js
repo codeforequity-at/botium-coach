@@ -36,14 +36,6 @@ class TestResultBuilder {
     }))
   }
 
-  createConfusedSentences (testConfigurationsId, values) {
-    return values.map(value => ({
-      Id: uuidv4(),
-      value,
-      testConfigurationsId
-    }))
-  }
-
   createIgnoredentences (testConfigurationsId, values) {
     return values.map(value => ({
       Id: uuidv4(),
@@ -112,7 +104,6 @@ class TestResultBuilder {
     const testConfiguration = this.createTestConfiguration(test.testUUID, customData.testConfiguration)
     const allowedDomains = this.createAllowedDomains(testConfiguration.Id, customData.allowedDomains)
     const approvedTopics = this.createApprovedTopics(testConfiguration.Id, customData.approvedTopics)
-    const confusedSentences = this.createConfusedSentences(testConfiguration.Id, customData.confusedSentences)
     const ignoredSentences = this.createIgnoredentences(testConfiguration.Id, customData.ignoredSentences)
     const forbiddenTopics = this.createForbiddenTopics(testConfiguration.Id, customData.forbiddenTopics)
     const testResult = this.createTestResult(test.Id, customData.testResult)
@@ -131,7 +122,6 @@ class TestResultBuilder {
       testConfigurations: testConfiguration,
       allowedDomains,
       approvedTopics,
-      confusedSentences,
       ignoredSentences,
       forbiddenTopics,
       testResults: testResult,
